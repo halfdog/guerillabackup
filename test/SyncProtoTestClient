@@ -1,0 +1,85 @@
+#!/usr/bin/python2.7 -BEsStt
+# This client connects to a sync service and sends requests from
+# stdin and prints the responses.
+
+import sys
+sys.path = sys.path[1:] + ['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib-enabled']
+
+import errno
+import fcntl
+import os
+import socket
+import struct
+
+if len(sys.argv) != 2:
+  print >>sys.stderr, 'Usage %s [target]' % sys.argv[0]
+  sys.exit(1)
+
+connectAddress = sys.argv[1]
+
+clientSocket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+clientSocket.connect(connectAddress)
+print >>sys.stderr, 'Connected to %s' % repr(connectAddress)
+
+flags = fcntl.fcntl(clientSocket.fileno(), fcntl.F_GETFL)
+fcntl.fcntl(clientSocket.fileno(), fcntl.F_SETFL, flags|os.O_NONBLOCK)
+
+remoteData = b''
+while True:
+  readData = None
+  try:
+    readData = clientSocket.recv(1<<20)
+  except socket.error as receiveError:
+    if receiveError.errno == errno.EAGAIN:
+      readData = ''
+    else:
+      raise
+
+  if len(readData) != 0:
+    print >>sys.stderr, 'Received %d bytes of remote data' % len(readData)
+    remoteData += readData
+  if len(remoteData) >= 5:
+    if not(remoteData[0] in ['N', 'R', 'S']):
+      print >>sys.stderr, 'Invalid remote data package type %s, purging data %s' % (repr(remoteData[0]), repr(remoteData))
+      remoteData = b''
+    else:
+      remoteDataLength = struct.unpack('<I', remoteData[1:5])[0]
+      print >>sys.stderr, 'Packet length is %d' % remoteDataLength
+      if (remoteDataLength < 0) or (remoteDataLength > (1<<20)):
+        print >>sys.stderr, 'Invalid remote data length %d, purging data %s' % (remoteDataLength, repr(remoteData))
+        remoteData = b''
+      elif remoteDataLength+5 <= len(remoteData):
+        print >>sys.stderr, 'Received valid packet %s' % repr(remoteData[0]+remoteData[5:5+remoteDataLength])
+        remoteData = remoteData[5+remoteDataLength:]
+# Try again to read more data
+        continue
+
+# No remote data to dump, try to read a command
+  commandLine = sys.stdin.readline()
+  if commandLine == '':
+# End of input.
+    break
+
+  commandLine = commandLine[:-1]
+  if commandLine == '':
+    continue
+
+  commandLength = commandLine.find(' ')
+  if commandLength < 0:
+    commandLength = len(commandLine)
+  command = commandLine[:commandLength]
+
+  if command == 'send':
+    sendData = commandLine[commandLength+1:]
+    if (len(sendData) == 0) or not(sendData[0] in ['N', 'R', 'S']):
+      print >>sys.stderr, 'Send data has to start with type letter, optionally followed by data %s' % repr(sendData)
+      continue
+
+    sendData = sendData[0]+struct.pack('<I', len(sendData)-1)+sendData[1:]
+    sendPos = 0
+    while sendPos < len(sendData):
+      sendLength = clientSocket.send(sendData[sendPos:])
+      sendPos += sendLength
+    continue
+
+  print >>sys.stderr, 'Unknown command %s' % repr(command)

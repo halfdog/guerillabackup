@@ -1,0 +1,86 @@
+# This file is a template to create own backup generator unit
+# definitions, that are in fact just plain python code. You may
+# also use other guerillabackup core units as basis for your new
+# code, e.g. /usr/lib/guerillabackup/lib/guerillabackup/LogfileBackupUnit.py
+
+
+import guerillabackup
+
+# Declare the keys to access configuration parameters in the configuration
+# data dictionary here.
+CONFIG_SOME_KEY = 'SomeBackupUnitSomeParameter'
+
+class SomeBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
+  """Add documentation about this class here."""
+
+  def __init__(self, unitName, configContext):
+    """Initialize this unit using the given configuration....
+    @param unitName The name of the activated unit main file in
+    /etc/guerillabackup/units."""
+# Keep the unitName, it is usefull to create unique persistency
+# directory names.
+    self.unitName = unitName
+    self.configContext = configContext
+
+# Each unit has to handle the test mode flag, so extract it here.
+    self.testModeFlag = configContext.get(
+        guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY, False)
+    if not isinstance(self.testModeFlag, bool):
+      raise Exception('Configuration parameter %s has to be boolean' % guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY)
+
+# Open a persistency directory.
+    self.persistencyDirFd = guerillabackup.openPersistencyFile(configContext,
+        os.path.join('generators', self.unitName),
+        os.O_DIRECTORY|os.O_RDONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, 0600)
+
+    handle = None
+    try:
+      handle = guerillabackup.secureOpenAt(
+          self.persistencyDirFd, 'state.current',
+          fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
+    except OSError as openError:
+      if openError.errno != errno.ENOENT:
+        raise
+    if handle != None:
+      stateData = ''
+      while True:
+        data = os.read(handle, 1<<20)
+        if len(data) == 0:
+          break
+        stateData += data
+      os.close(handle)
+      stateInfo = json.loads(stateData)
+      if ((not isinstance(stateInfo, list)) or (len(stateInfo) != 2) or
+          (not isinstance(stateInfo[0], int)) or
+          (not isinstance(stateInfo[1], dict))):
+        raise Exception('Persistency data structure mismatch')
+      ...
+# Now use the persistency information.
+
+  def getNextInvocationTime(self):
+    """Get the time in seconds until this unit should called again.
+    If a unit does not know (yet) as invocation needs depend on
+    external events, it should report a reasonable low value to
+    be queried again soon.
+    @return 0 if the unit should be invoked immediately, the seconds
+    to go otherwise."""
+    currentTime = int(time.time())
+# Calculate the next invocation time.
+    ...
+    return maxIntervalDelta
+
+  def invokeUnit(self, sink):
+    """Invoke this unit to create backup elements and pass them
+    on to the sink. Even when indicated via getNextInvocationTime,
+    the unit may decide, that it is not yet ready and not write
+    any element to the sink.
+    @return None if currently there is nothing to write to the
+    source, a number of seconds to retry invocation if the unit
+    assumes, that there is data to be processed but processing
+    cannot start yet, e.g. due to locks held by other parties
+    or resource, e.g. network storages, currently not available."""
+    ...
+
+# Declare the main unit class so that the backup generator can
+# instantiate it.
+backupGeneratorUnitClass = SomeBackupUnit

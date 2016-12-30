@@ -1,0 +1,32 @@
+Source: guerillabackup
+Section: misc
+Priority: extra
+Maintainer: halfdog <me@halfdog.net>
+Build-Depends: debhelper (>= 9.0.0), dh-python, dh-systemd, docbook-xsl, docbook-xml, python-all, xsltproc
+Standards-Version: 3.9.8
+Homepage: https://github.com/halfdog/guerillabackup
+Vcs-Git: https://github.com/halfdog/guerillabackup.git
+Vcs-Browser: https://github.com/halfdog/guerillabackup
+
+Package: guerillabackup
+Architecture: all
+Depends: ${python:Depends}, ${misc:Depends}
+Section: misc
+Priority: extra
+Description: resilient, distributed backup and archiving solution
+ The tool supports asynchronous, local-coordinated, distributed
+ secure backup generation, forwarding, verification, storage
+ and deletion even in rugged environments. The system is open
+ to integration of own code. The codebase is very small and
+ kept simple to ease auditing.
+ .
+ Unlike business backup solutions, guerillabackup also considers
+ following conditions that might be encountered with private use:
+ * infrastructure uptime below 99%, e.g. machines not always powered
+ * poor network connectivity, e.g. mobile access, parallel video
+   streaming
+ * poor physical access and anti-theft protection of machines
+ * no security monitoring of machines
+ .
+ See /usr/share/doc/guerillabackup/Design.txt.gz section "Requirements"
+ for more information.

@@ -1,0 +1,125 @@
+Manual Installation:
+====================
+
+This installation guide applies to perform a manual installation
+of GuerillaBackup.
+
+* Create backup generation directory structures:
+
+mkdir -m 0700 -p /etc/guerillabackup/units /var/lib/guerillabackup/data /var/lib/guerillabackup/state
+cp -aT src /usr/lib/guerillabackup
+
+
+Configuration of BackupGenerator:
+=================================
+
+* Configure generator units:
+
+The unit configuration directory "/etc/guerillabackup/units" contains
+templates for all available units. The documentation for unit
+configuration parameters can be found within the template itself.
+
+To enable a unit, the configuration has to be created and the
+unit code to be activated. See "BackupGenerator" manual page for
+more details.
+
+  * Enable a default logfile archiving component:
+
+ln -s -- /usr/lib/guerillabackup/lib/guerillabackup/LogfileBackupUnit.py /etc/guerillabackup/units/LogfileBackupUnit
+cp /etc/guerillabackup/units/LogfileBackupUnit.config.template /etc/guerillabackup/units/LogfileBackupUnit.config
+
+Enable log data directories by editing "LogfileBackupUnit.config".
+
+  * Add a cyclic tar backup component:
+
+ln -s -- /usr/lib/guerillabackup/lib/guerillabackup/TarBackupUnit.py /etc/guerillabackup/units/TarBackupUnit
+cp /etc/guerillabackup/units/TarBackupUnit.config.template /etc/guerillabackup/units/TarBackupUnit.config
+
+Add tar backup configurations needed on the source system to the
+configuration file.
+
+* Perform a generator test run in foreground mode:
+
+Start the backup generator directly:
+
+/usr/lib/guerillabackup/BackupGenerator
+
+The tool should not emit any errors during normal operation while
+running. After your CPU is idle, check that all backup volumes
+were generated as expected by verifying existence of backup files
+in the sink directory. You might use
+
+find /var/lib/guerillabackup -type f | sort
+
+for that.
+
+* Enable automatic startup of the generator after boot:
+
+  * On systemd systems:
+
+mkdir -p /etc/systemd/system
+cp data/init/systemd/guerillabackup.service /etc/systemd/system/guerillabackup.service
+systemctl enable guerillabackup.service
+start guerillabackup
+
+  * On upstart systems:
+
+cp data/init/upstart/guerillabackup.conf /etc/init/guerillabackup.conf
+
+  * As cronjob after reboot:
+
+cat <<EOF > /etc/cron.d/guerillabackup
+@reboot root	(/usr/lib/guerillabackup/BackupGenerator < /dev/null >> /var/log/guerillabackup.log 2>&1 &)
+EOF
+
+
+Configuration of TransferService:
+=================================
+
+* Configure the service:
+
+The main configuration can be found in "/etc/guerillabackup/config".
+The most simplified transfer scheme is just a sender and receiver
+to move backup data. Transfer can be started independently from
+backup generation when conditions are favourable, e.g. connectivity
+or bandwidth availability.
+
+The upstream source documentation contains two testcases for this
+scenario, "SenderOnlyTransferService" and "ReceiverOnlyTransferService".
+
+  * Sender configuration:
+
+Just enable "TransferSenderPolicyClass" and "TransferSenderPolicyInitArgs"
+for a default move-only sender policy.
+
+  * Receiver configuration:
+
+While sender often requires root privileges to read the backup
+data files to avoid privacy issues with backup content. The receiver
+on the other hand is usually running on a suitable intermediate
+transfer hop or final data sink, where isolation is easier. In
+such scenarios, "/etc/guerillabackup/config.template" can be copied
+and used with any user ID. To use it, adjust "GeneralRuntimeDataDir"
+and "TransferServiceStorageBaseDir" appropriately, e.g.
+
+GeneralRuntimeDataDir = '/[user data directory]/run'
+TransferServiceStorageBaseDir = '/[user data directory]/[host]
+
+The receiver policies have to be enabled also by enabling
+"TransferReceiverPolicyClass" and "TransferReceiverPolicyInitArgs".
+
+The service is then started using
+
+/usr/lib/guerillabackup/TransferService --Config [configfile]
+
+* Automatic startup:
+
+Activation is similar to "Configuration of BackupGenerator", only
+the systemd unit name "guerillabackup-transfer.service" has to
+be used for systemd.
+
+* Initiate the transfer:
+
+Transfer will start as soon as a connection between the two
+TransferService instances is established. See "TransferService"
+manual page for more information on that.

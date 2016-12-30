@@ -1,0 +1,159 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN"
+"http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd" [
+  <!-- Fill in your name for FIRSTNAME and SURNAME. -->
+  <!ENTITY dhfirstname "halfdog">
+  <!ENTITY dhsurname   "">
+  <!-- dhusername could also be set to "&dhfirstname; &dhsurname;". -->
+  <!ENTITY dhusername  "halfdog">
+  <!ENTITY dhemail     "me@halfdog.net">
+  <!-- SECTION should be 1-8, maybe w/ subsection other parameters are
+       allowed: see man(7), man(1) and
+       http://www.tldp.org/HOWTO/Man-Page/q2.html. -->
+  <!ENTITY dhsection   "1">
+  <!-- TITLE should be something like "User commands" or similar (see
+       http://www.tldp.org/HOWTO/Man-Page/q2.html). -->
+  <!ENTITY dhtitle     "BackupGenerator User Manual">
+  <!ENTITY dhucpackage "BACKUPGENERATOR">
+  <!ENTITY dhpackage   "guerillabackup">
+]>
+
+<refentry>
+  <refentryinfo>
+    <title>&dhtitle;</title>
+    <productname>&dhpackage;</productname>
+    <authorgroup>
+      <author>
+       <firstname>&dhfirstname;</firstname>
+        <surname>&dhsurname;</surname>
+        <contrib>Wrote this manpage.</contrib>
+        <address>
+          <email>&dhemail;</email>
+        </address>
+      </author>
+    </authorgroup>
+    <copyright>
+      <year>2016</year>
+      <holder>&dhusername;</holder>
+    </copyright>
+    <legalnotice>
+      <para>This manual page was written for guerillabackup system
+        on Linux systems, e.g. Debian.</para>
+      <para>Permission is granted to copy, distribute and/or modify this
+        document under the terms of the Lesser GNU General Public
+        License, Version 3.</para>
+      <para>On Debian systems, the complete text of the Lesser
+        GNU General Public License can be found in
+        <filename>/usr/share/common-licenses/LGPL-3</filename>.</para>
+    </legalnotice>
+  </refentryinfo>
+  <refmeta>
+    <refentrytitle>BACKUPGENERATOR</refentrytitle>
+    <manvolnum>&dhsection;</manvolnum>
+  </refmeta>
+  <refnamediv>
+    <refname>BackupGenerator</refname>
+    <refpurpose>Program to generate backups or archives using
+    configured generator units according to given schedule.</refpurpose>
+  </refnamediv>
+  <refsynopsisdiv>
+    <cmdsynopsis>
+      <command>BackupGenerator</command>
+      <!-- These are several examples, how syntaxes could look -->
+      <arg choice="plain"><option>--ConfigDir <replaceable>dir</replaceable></option></arg>
+    </cmdsynopsis>
+  </refsynopsisdiv>
+  <refsect1 id="description">
+    <title>DESCRIPTION</title>
+    <para>This is the manual page for the <command>BackupGenerator</command>
+    command. For more details see documentation at
+    /usr/share/doc/guerillabackup. The generator is responsible
+    to keep track over all scheduled backup tasks (units), to
+    invoke them and write the created backup data stream to the
+    data sink, usually the file system. The generator supports
+    generation of encrypted backups, management of information
+    about the backuped element, adds hashes to support detection
+    of missing and manipulated backups. With that functions, confidentiality
+    and integrity can be protected, also providing non-repudiation
+    features.</para>
+  </refsect1>
+  <refsect1 id="options">
+    <title>OPTIONS</title>
+    <variablelist>
+      <varlistentry>
+        <term><option>--ConfigDir <replaceable>dir</replaceable></option></term>
+        <listitem>
+          <para>This optional parameter specifies an alternative
+          configuration loading directory instead of /etc/guerillabackup.
+          The directory has to contain the main configuration
+          file (config), the units subdirectory.
+          </para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+  <refsect1 id="files">
+    <title>FILES</title>
+    <variablelist>
+      <varlistentry>
+        <term><filename>/etc/guerillabackup/config</filename></term>
+        <listitem>
+          <para>The main configuration file for all guerillabackup
+          tools. Use /etc/guerillabackup/config.template to create
+          it. The template also contains the documentation for
+          each available parameter.</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>/etc/guerillabackup/units/[name]</filename></term>
+        <listitem>
+          <para>The units directory contains the enabled backup
+          data generation units. To enable a unit, a symbolic
+          link to the unit definition file has to be created.
+          The name of the symlink has to consist only of letters
+          and numbers. For example, to enable LogfileBackupUnit
+          for logfile archiving, one could use
+          "ln -s -- /usr/lib/guerillabackup/lib/guerillabackup/LogfileBackupUnit.py LogfileBackupUnit".</para>
+          <para>For units with an associated configuration file
+          named "[unitname].config", configuration parameters
+          from the main configuration file can be overridden within
+          the unit-specific configuration. For all standard units,
+          /etc/guerillabackup/units contains templates for unit
+          configuration files.</para>
+          <para>It is also possible to link a the same unit definition
+          file more than once using different symbolic link names.
+          Usuallly this only makes sense when each of those units
+          has a different unit configuration file.</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>/etc/systemd/system/guerillabackup-generator.service</filename></term>
+        <listitem>
+          <para>On systemd installations, this is the systemd
+          configuration for automatic startup of the BackupGenerator
+          service. Usually it is not enabled by default. To enable
+          use "systemctl enable guerillabackup-generator.service".
+          </para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+  <refsect1 id="bugs">
+    <title>BUGS</title>
+    <para>
+      For guerillabackup setups installed from packages, e.g.
+      .deb or .rpm files usually installed via package management
+      software, e.g. apt-get, aptitude, rpm, yast, please report
+      bugs to the package maintainer.</para>
+    <para>
+      For setups from unpackaged software trunk, please report
+      at <ulink url="https://github.com/halfdog/guerillabackup/issues"/>.</para>
+  </refsect1>
+  <refsect1 id="see_also">
+    <title>SEE ALSO</title>
+<!-- In alpabetical order. -->
+    <para>
+      <citerefentry><refentrytitle>TransferService</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+    </para>
+  </refsect1>
+</refentry>

@@ -1,0 +1,4 @@
+etc/guerillabackup/lib-enabled
+var/lib/guerillabackup
+var/lib/guerillabackup/data
+var/lib/guerillabackup/state

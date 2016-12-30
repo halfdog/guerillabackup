@@ -1,0 +1,32 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+# export DH_VERBOSE=1
+
+%:
+	dh $@ --with=python2,systemd
+
+override_dh_auto_build:
+	xsltproc --nonet \
+	--param make.year.ranges 1 \
+	--param make.single.year.ranges 1 \
+	--param man.charmap.use.subset 0 \
+	-o debian/ \
+	http://docbook.sourceforge.net/release/xsl/current/manpages/docbook.xsl \
+	doc/BackupGenerator.1.xml doc/TransferService.1.xml
+	dh_auto_build
+
+# Do not enable the services on fresh install by default. The
+# user should do that manually for those services, he really wants
+# to run.
+override_dh_systemd_enable:
+	dh_systemd_enable --no-enable
+
+# Do not start the services after install or update. Without this
+# option, all units would be started during upgrade, even those
+# not enabled. When user did not enable them, dpkg should respect
+# that. Those enabled will still be started by custom postinst
+# code.
+override_dh_systemd_start:
+	dh_systemd_start --no-start

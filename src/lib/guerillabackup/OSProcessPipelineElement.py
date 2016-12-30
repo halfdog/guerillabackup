@@ -1,0 +1,234 @@
+"""This module contains classes for creation of asynchronous
+OS process based pipeline elements."""
+
+import fcntl
+import guerillabackup
+from guerillabackup.TransformationProcessOutputStream import NullProcessOutputStream
+from guerillabackup.TransformationProcessOutputStream import TransformationProcessOutputStream
+import os
+import subprocess
+
+class OSProcessPipelineElement(
+    guerillabackup.TransformationPipelineElementInterface):
+  """This is the interface to define data transformation pipeline
+  elements, e.g. for compression, encryption, signing. To really
+  start execution of a transformation pipeline, transformation
+  process instances have to be created for each pipe element."""
+  def __init__(self, executable, execArgs, allowedExitStatusList=[0]):
+    self.executable = executable
+    self.execArgs = execArgs
+    if not guerillabackup.isValueListOfType(self.execArgs, str):
+      raise Exception('execArgs have to be list of strings')
+    self.allowedExitStatusList = allowedExitStatusList
+
+  def getExecutionInstance(self, upstreamProcessOutput):
+    """Get an execution instance for this transformation element.
+    @param upstreamProcessOutput this is the output of the upstream
+    process, that will be wired as input of the newly created
+    process instance."""
+    return OSProcessPipelineExecutionInstance(
+        self.executable, self.execArgs, upstreamProcessOutput,
+        self.allowedExitStatusList)
+
+
+class OSProcessPipelineExecutionInstance(
+    guerillabackup.TransformationProcessInterface):
+  def __init__(self, executable, execArgs, upstreamProcessOutput, allowedExitStatusList=[0]):
+    self.executable = executable
+    self.execArgs = execArgs
+    self.upstreamProcessOutput = upstreamProcessOutput
+    if self.upstreamProcessOutput == None:
+# Avoid reading from real stdin, use replacement output.
+      self.upstreamProcessOutput = NullProcessOutputStream()
+    self.upstreamProcessOutputBuffer = ''
+    self.inputPipe = None
+    self.allowedExitStatusList = allowedExitStatusList
+
+# Simple state tracking to be more consistent on multiple invocations
+# of the same method. States are "not starte", "running", "ended"
+    self.processState = 0
+    self.process = None
+# Process output instance of this process only when no output
+# file descriptor is set.
+    self.processOutput = None
+# This exception holds any processing error until stop() is called.
+    self.processingException = None
+
+  def createProcess(self, outputFd):
+    """Create the process.
+    @param outputFd if not None, use this as output stream descriptor."""
+
+    self.inputPipe = None
+    outputStream = subprocess.PIPE
+    if outputFd != None:
+      outputStream = outputFd
+    if self.upstreamProcessOutput.getOutputStreamDescriptor() == None:
+      self.process = subprocess.Popen(self.execArgs, executable=self.executable,
+          stdin=subprocess.PIPE, stdout=outputStream)
+      self.inputPipe = self.process.stdin
+      flags = fcntl.fcntl(self.inputPipe.fileno(), fcntl.F_GETFL)
+      fcntl.fcntl(self.inputPipe.fileno(), fcntl.F_SETFL, flags|os.O_NONBLOCK)
+    else:
+      self.process = subprocess.Popen(self.execArgs, executable=self.executable,
+          stdin=self.upstreamProcessOutput.getOutputStreamDescriptor(),
+          stdout=outputStream)
+
+    self.processOutput = None
+    if outputFd == None:
+      self.processOutput = TransformationProcessOutputStream(
+          self.process.stdout.fileno())
+
+  def getProcessOutput(self):
+    """Get the output connector of this transformation process."""
+    if self.process == None:
+      self.createProcess(None)
+    if self.processOutput == None:
+      raise Exception('No access to process output in stream mode')
+    return self.processOutput
+
+  def setProcessOutputStream(self, processOutputStream):
+    """Some processes may also support setting of an output stream
+    file descriptor. This is especially useful if the process
+    is the last one in a pipeline and hence could write directly
+    to a file or network descriptor.
+    @throw Exception if this process does not support setting
+    of output stream descriptors."""
+    if self.process != None:
+      raise Exception('No setting of output stream after previous setting or call to getProcessOutput')
+    self.createProcess(processOutputStream)
+
+  def checkConnected(self):
+    """Check if this process instance is already connected to
+    an output, e.g. via getProcessOutput or setProcessOutputStream."""
+    if self.process == None:
+      raise Exception('Operation mode not known while not fully connected')
+# Process instance only created when connected, so everything OK.
+
+  def isAsynchronous(self):
+    """A asynchronous process just needs to be started and will
+    perform data processing on streams without any further interaction
+    while running."""
+    self.checkConnected()
+    return self.inputPipe == None
+
+  def start(self):
+    """Start this execution process."""
+    if self.processState != 0:
+      raise Exception('Already started')
+    self.checkConnected()
+# The process itself was already started when being connected.
+# Just update the state here.
+    self.processState = 1
+
+  def stop(self):
+    """Stop this execution process when still running.
+    @return None when the the instance was already stopped, information
+    about stopping, e.g. the stop error message when the process
+    was really stopped."""
+    if self.processState == 0:
+      raise Exception('Not started')
+# We are already stopped, do othing here.
+    if self.processState == 2:
+      return None
+# Clear any pending processing exceptions.
+    stopException = self.processingException
+    self.processingException = None
+    if self.isRunning():
+      self.process.kill()
+      self.process.wait()
+    if stopException == None:
+# See if there is any other reason to report an error. At first
+# make sure, all upstream data was read.
+      readData = self.upstreamProcessOutput.readData(1<<16)
+      if readData != None:
+        stopException = Exception('Not all upstream data processed')
+    return stopException
+
+  def isRunning(self):
+    """See if this process instance is still running.
+    @return False if instance was not yet started or already stopped.
+    If there are any unreported pending errors from execution,
+    this method will return True until doProcess() or stop() is
+    called at least once."""
+    if (self.process == None) or (self.process.returncode != None):
+      return False
+    if self.processingException != None:
+      return True
+    (pid, status) = os.waitpid(self.process.pid, os.WNOHANG)
+    if pid == 0:
+      return True
+# We are not running any more, an additional invocation of this
+# method would result in waitpid exception or wrong results as
+# process is not running any more.
+    self.process = None
+    if (status&0xff) != 0:
+      self.processingException = Exception('Process end by signal %d, status 0x%x' % (status&0xff, status))
+    elif not (status>>8) in self.allowedExitStatusList:
+      self.processingException = Exception('Process end with unexpected exit status %d' % (status>>8))
+
+# Pretend that we are still running so that pending exception
+# is reported with next doProcess() call.
+    return self.processingException != None
+
+  def doProcess(self):
+    """This method triggers the data transformation operation
+    of this component. For components in synchronous mode, the
+    method will attempt to move data from input to output. Asynchronous
+    components will just check the processing status and may raise
+    an exception, when processing terminated with errors. As such
+    a component might not be able to detect the amount of data
+    really moved since last invocation, the component may report
+    a fake single byte move.
+    @throws Exception if an uncorrectable transformation state
+    was reached and transformation cannot proceed, even though
+    end of input data was not yet seen. Raise exception also when
+    process was not started or already stopped.
+    @return the number of bytes read or written or at least a
+    value greater zero if any data was processed. A value of zero
+    indicates, that currently data processing was not possible
+    due to filled buffers but should be attemted again. A value
+    below zero indicates that all input data was processed and
+    output buffers were flushed already."""
+    if self.processState == 0:
+      raise Exception('Not started')
+    if self.processState == 2:
+      raise Exception('Already stopped')
+    if self.processingException != None:
+      processingException = self.processingException
+      self.processingException = None
+      self.processState = 1
+      raise processingException
+
+    if self.inputPipe != None:
+      if len(self.upstreamProcessOutputBuffer) == 0:
+        self.upstreamProcessOutputBuffer = self.upstreamProcessOutput.readData(1<<16)
+        if self.upstreamProcessOutputBuffer == None:
+          self.inputPipe.close()
+          self.inputPipe = None
+      if ((self.upstreamProcessOutputBuffer != None) and
+          (len(self.upstreamProcessOutputBuffer) != 0)):
+        try:
+          writeLength = self.inputPipe.write(self.upstreamProcessOutputBuffer)
+          if writeLength == len(self.upstreamProcessOutputBuffer):
+            self.upstreamProcessOutputBuffer = ''
+          else:
+            self.upstreamProcessOutputBuffer = self.upstreamProcessOutputBuffer[writeLength:]
+          return writeLength
+        except Exception as processingException:
+          self.processingException = processingException
+          raise
+    if self.isRunning():
+# Pretend that we are still waiting for more input, thus polling
+# may continue when at least another component moved data.
+      return 0
+# All pipes are empty and no more processing is possible.
+    return -1
+
+  def getBlockingStreams(self, readStreamList, writeStreamList):
+    """Collect the file descriptors that are currently blocking
+    this synchronous compoment."""
+# The upstream input can be ignored when really a file descriptor,
+# it is wired to this process for asynchronous use anyway. When
+# not a file descriptor, writing to the input pipe may block.
+    if self.inputPipe != None:
+      writeStreamList.append(self.inputPipe.fileno())

@@ -1,0 +1,73 @@
+#!/usr/bin/python2.7 -BEsStt
+# This test collection attempts to verify that the library low-level
+# IO functions work as expected.
+
+import errno
+import os
+import sys
+import time
+
+sys.path = sys.path[1:] + ['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib-enabled']
+import guerillabackup
+
+testDirName = '/tmp/gb-test-%s' % time.time()
+os.mkdir(testDirName, 0700)
+
+baseDirFd = os.open(testDirName, os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+
+# Open a nonexisting file without creating it:
+try:
+  newFileFd = guerillabackup.secureOpenAt(baseDirFd, 'newfile',
+      fileOpenFlags = os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY, fileCreateMode=0666)
+  raise Exception('Illegal state')
+except OSError as osError:
+  if osError.errno != errno.ENOENT:
+    raise Exception('Illegal state: %s' % osError)
+
+# Open a file, creating it:
+newFileFd = guerillabackup.secureOpenAt(baseDirFd, 'newfile',
+    fileOpenFlags = os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY|os.O_CREAT|os.O_EXCL, fileCreateMode=0666)
+os.close(newFileFd)
+
+# Try again, now should fail as already existing:
+try:
+  newFileFd = guerillabackup.secureOpenAt(baseDirFd, 'newfile',
+      fileOpenFlags = os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY|os.O_CREAT|os.O_EXCL, fileCreateMode=0666)
+except OSError as osError:
+  if osError.errno != errno.EEXIST:
+    raise Exception('Illegal state: %s' % osError)
+
+# Try to create directory and file but directory still missing:
+try:
+  newFileFd = guerillabackup.secureOpenAt(baseDirFd, 'newdir/newfile',
+      dirOpenFlags = os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
+      dirCreateMode = None,
+      fileOpenFlags = os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY|os.O_CREAT|os.O_EXCL,
+      fileCreateMode = 0666)
+  raise Exception('Illegal state')
+except OSError as osError:
+  if osError.errno != errno.ENOENT:
+    raise Exception('Illegal state: %s' % osError)
+
+# Try to create directory and file:
+newFileFd=guerillabackup.secureOpenAt(baseDirFd, 'newdir/newfile',
+    dirOpenFlags = os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
+    dirCreateMode = 0777,
+    fileOpenFlags = os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY|os.O_CREAT|os.O_EXCL,
+    fileCreateMode = 0666)
+
+# Try to create only directories: A normal open call would create
+# a file, that could not be reopened using the same flags.
+newFileFd = guerillabackup.secureOpenAt(baseDirFd, 'newdir/subdir',
+    dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
+    dirCreateMode=0777,
+    fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY|os.O_CREAT|os.O_EXCL|os.O_DIRECTORY,
+    fileCreateMode=0777)
+os.close(newFileFd)
+newFileFd = guerillabackup.secureOpenAt(baseDirFd, 'newdir/subdir',
+    dirOpenFlags = os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
+    dirCreateMode=0777,
+    fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY|os.O_DIRECTORY,
+    fileCreateMode=0777)
+
+print >>sys.stderr, 'No recursive testdir cleanup for %s' % testDirName

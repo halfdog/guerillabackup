@@ -1,0 +1,53 @@
+# TarBackupUnit configuration template
+
+# This list contains dictionaries with configuration parameters
+# for each tar backup to run. All tar backups of one unit are
+# run sequentially. Configuration parameters are:
+# * PreBackupCommand: execute this command given as list of arguments
+#   before starting the backup, e.g. create a filesystem or virtual
+#   machine snapshot, perform cleanup.
+# * PostBackupCommand: execute this command after starting the
+#   backup.
+# * Root: root directory of tar backup, "/" when missing.
+# * Include: list of pathes to include, ["."] when missing.
+# * Exclude: list of patterns to exclude from backup (see tar
+#   documentation "--exclude"). When missing and Root is "/",
+#   list ["./var/lib/guerillabackup/data"] is used.
+# * IgnoreBackupRaces: flag to indicate if races during backup
+#   are acceptable, e.g. because the directories are modified,
+# * FullBackupTiming: tuple with minimum and maximum interval
+#   between full backup invocations and modulo base and offset,
+#   all in seconds. Without modulo invocation (all values None),
+#   full backups will run as soon as minimum interval is exceeded.
+#   With modulo timing, modulo trigger is ignored when below minimum
+#   time. When gap above maximum interval, immediate backup is
+#   started.
+# * IncBackupTiming: When set, incremental backups are created
+#   to fill the time between full backups. Timings are specified
+#   as tuple with same meaning as in FullBackupTiming parameter.
+#   This will also trigger generation of tar file indices when
+#   running full backups.
+# * FullOverrideCommand: when set, parameters Exclude, Include,
+#   Root are ignored and exactly the given command is executed.
+# * IncOverrideCommand: when set, parameters Exclude, Include,
+#   Root are ignored and exactly the given command is executed.
+# * KeepIndices: number of old incremental tar backup indices
+#   to keep. With -1 keep all, otherwise keep one the given number.
+#   Default is 0.
+# * Policy: If not none, include this string as handling policy
+# * EncryptionKey: If not None, encrypt the input using the named
+#   key. Otherwise default encryption key from global configuration
+#   might be used.
+
+TarBackupUnitConfigList = {}
+# TarBackupUnitConfigList['/root'] = {
+#   'PreBackupCommand': ['/usr/bin/touch', '/tmp/prebackup'],
+#   'PostBackupCommand': ['/usr/bin/touch', '/tmp/postbackup'],
+#   'Root': '/', 'Include': '.',
+#   'Exclude': ['./proc', './sys', './var/lib/guerillabackup/data'],
+#   'IgnoreBackupRaces': False,
+# Schedule one root directory full backup every week.
+#   'FullBackupTiming': [20*3600, (7*24+4)*3600, 7*24*3600, 0],
+# Create a daily incremental backup when machine is up.
+#   'IncBackupTiming': [20*3600, 28*3600, 24*3600, 0],
+#   'Policy': 'default', 'EncryptionKey': None}

@@ -1,0 +1,289 @@
+Terms:
+======
+
+The following terms shall be used within requirements and design
+to describe the components.
+
+* Backup data element: A complete, atomic backup data storage
+  unit representing a defined complete state (full) or the change
+  from a previous state (incremental). Each element is linked
+  to a single source identified by a backup data element ID.
+
+* Backup data element ID: An unique identifier for backup data
+  element storages to refer to a stored element. The storage has
+  to be able to derive the corresponding "source URL" from the
+  ID.
+
+* BackupGenerator: The tool implementing the "Backup Scheduler"
+  and "Sink" functionality to trigger execution of registered
+  "Generator Unit" elements.
+
+* Backup Scheduler: The scheduler will invoke backup generation
+  of a given "Generator Unit", thus triggering the backup storage
+  to a given sink.
+
+* Generator Unit: When invoked by a BackupGenerator, the unit
+  delivers backup data elements from one or more "Sources". This
+  does not imply, that the unit has direct access to the "Source",
+  it may also retrieve elements from other generators or intermediate
+  caching or storage units.
+
+* Source: A source is an identified data entity with a defined
+  state in time. At some timepoints, backup data elements can
+  be produced to represent that state or changes to that state
+  to an extent depending on the source properties. The series
+  of backup data elements produced for a single source are identified
+  by a common "Source URL".
+
+* Source Multiplexer: A source multiplexer can retrieve or generate
+  "backup data elements" from one or more sources and deliver
+  deliver them to a sink multiplexer.
+
+* Source URL: See design.
+
+
+User stories:
+=============
+
+* N-way redundant storage synchronization:
+
+There are n machines, all producing "backup data elements". All
+these machines communicate one with another. The backup data elements
+from one machine should be stored on at least two more machines.
+
+The source synchronization policy is to announce each element
+to all other machines until one of those confirms transmission.
+On transmission, the source keeps information about which elements
+were sucessfully stored by the remote receiver. As soon as the
+required number of copies is reached, the file is announced only
+to those agents any more, that have already fetched it.
+
+The receiver synchronization policy is to ask each machine for
+data elements. If the element is already present, it will not
+be fetched again, otherwise the local policy may decide to start
+a fetch procedure immediately. To conserve bandwidth and local
+resources, the policy may also refuse to fetch some elements now
+and retry later, thus giving another slower instance the chance
+to fetch the file by itself. For local elements not announced
+any more by the remote source, the receiver will move them to
+the attic and delete after some time.
+
+When an agent does not attempt to synchronize for an extended
+period of time, the source will not count copies made by this
+agent to the total number of copies any more. Thus the source
+may start announcing the same backup data element to other agents
+again.
+
+
+Requirements:
+=============
+
+* [Req:SourceIdentification]: Each backup data source, that is
+  an endpoint producing backups, shall have a unique address,
+  both for linking stored backups to the source but also to apply
+  policies to data from a single source or to control behaviour
+  of a source.
+* [Req:SecureDataLocalDataTransfers]: Avoid copying of files between
+  different user contexts to protect against filesystem based
+  attacks, privilege escalation.
+* [Req:SynchronousGenerationAndStreaming]: Allow streaming of
+  backups from generator context to other local or remote context
+  immediately during generation.
+* [Req:Spooling]: Support spooling of "backup data elements" on
+  intermediate storage location, which is needed when final storage
+  location and source are not permanently connected during backup
+  generation. As "backup data elements" may need to be generated
+  timely, support writing to spool location and fetching from
+  there.
+* [Req:DetectSpoolingManipulations]: A malicious spool instance
+  shall not be able to remove or modify spooled backup data.
+* [Req:EncryptedBackups]: Support encryption of backup data.
+* [Req:Metainfo]: Allow transport of "backup data element"
+  meta information:
+  * Backup type ([Req:MetainfoBackupType]):
+    * full: the file contains the complete copy of the data
+    * inc: the backup has to be applied to the previous full backup
+      and possibly all incremental backups in between.
+  * storage data checksums
+  * handling policy
+  * fields for future use
+* [Req:NonRepudiation]: Ensure non-repudiation even for backup
+  files in spool. This means, that as soon as a backup file was
+  received by another party, the source shall not be able to deny
+  having produced it.
+* [Req:OrderedProcessing]: With spooling, files from one source
+  might not be transmitted in correct order. Some processing operations,
+  e.g. awstats, might need to see all files in correct order.
+  Thus where relevant, processor at end of pipeline shall be able
+  to verify all files have arrived and are properly ordered.
+* [Req:DecentralizedScheduling]: Administrator at source shall
+  be able to trigger immediate backup and change scheduling if
+  not disabled upstream when using streaming generation (see also
+  [Req:SynchronousGenerationAndStreaming]).
+* [Req:DecentralizedPolicing]: Administrator at source shall be
+  able to generate a single set of cyclic backups with non-default
+  policy tags.
+* [Req:ModularGeneratorUnitConfiguration]: Modularized configuration
+  at backup generator level shall guarantee independent adding,
+  changing or removal of configuration files but also ...
+* [Req:ModularGeneratorUnitCustomCode]: ... easy inclusion of
+  user-specific custom code without touching the application core.
+* [Req:StorageBackupDataElementAttributes]: Apart from data element
+  attributes, storage shall be able to keep track of additional
+  storage attributes to manage data for current applications,
+  e.g. policy based synchronization between multiple storages
+  but also for future applications.
+
+
+Design:
+=======
+
+* Source URL ([Req:SourceIdentification]): Each backup source
+  is identified by a unique UNIX-pathlike string starting with
+  '/' and path components consisting only of characters from the
+  set [A-Za-z0-9%.-] separated by slashes. The path components
+  '.' and '..' are forbidden for security reasons. The URL must
+  not end with a slash. A source may decide to use the '%' or
+  any other character for escaping when creating source URLs from
+  any other kind of input with broader set of allowed characters,
+  e.g. file names. The source must not rely on any downstream
+  processor to treat it any special.
+
+* File storage: The storage file name is the resource name but
+  with ISO-like timestamp (second precision) and optional serial
+  number prepended to the last path part of the source URL followed
+  by the backup type ([Req:MetainfoBackupType]) and suffix '.data'.
+  Inclusion of the backup type in file name simplifies manual
+  removal without use of staging tools.
+
+* Unit configuration: A "generator unit" of a given type might
+  have to be added multiple times but with different configuration.
+  Together with the configuration, each of the units might also
+  require a separate persistency or locking directory. Therefore
+  following scheme shall be used:
+
+  * A unit is activated by adding a symlink to an guerillabackup
+    core unit definition file ([Req:ModularGeneratorUnitConfiguration])
+    or creating a custom definition ([Req:ModularGeneratorUnitCustomCode]).
+
+  * A valid "generator unit" has to declare the main class object
+    to instantiate so that the generator can locate the class.
+
+  * Existance of a configuration file with same name as unit file,
+    just suffix changed to ".config", will cause this configuration
+    to be added as overlay to the global backup generator configuration.
+
+* Data processing pipeline design:
+  * Data processing pipelines shall be used to allow creation
+    of customized processing pipelines.
+  * To support parallel processing and multithreading, processing
+    pipelines can be built using synchronous and asynchronous
+    pipeline elements.
+  * Data processing has to be protected against two kind of errors,
+    that is blocking IO within one component while action from
+    another component would be required. Thus blocking, if any
+    requires a timeout under all circumstances to avoid that an
+    asynchronous process enters error state while blocking.
+  * Even when a pipeline instance in the middle of the complete
+    pipeline has terminated, nothing can be infered about the
+    termination behaviour of the up- or downstream elements, it
+    is still required to await normal termination or errors when
+    triggering processing: an asynchronous process may terminate
+    after an unpredictable amount of time due to calculation or
+    IO activites not infering with the pipeline data streams.
+  * When all synchronous pipeline elements are stuck, select on
+    all blocking file descriptors from those elements until the
+    first one is ready for IO again.
+
+* Scheduling: The scheduler contains a registry of known sources.
+  Each source is responsible to store scheduling information required
+  for operation, e.g. when source was last run, when it is scheduled
+  to be run again.
+
+  Each source has to provide methods to schedule and run it.
+
+  Each source has default processing pipeline associated, e.g.
+  compression, encryption, signing.
+
+  A source, that does not support multiple parallel invocation
+  has to provide locking support. While the older source process
+  shall continue processing uninterupted, the newer one may indicate
+  a retry timeout.
+
+* Encryption and signing: GPG shall be used to create encrypted
+  and signed files or detached signatures for immediate transmission
+  to trusted third party.
+
+* Metainformation files ([Req:Metainfo]): This file has a simple
+  structure just containing a json-serialized dictionary with
+  metainformation key-value pairs. The file name is derived from
+  the main backup file by appending ".info". As json serialization
+  of binary data is inefficient regarding space, this data shall
+  be encoded base64 before writing.
+  * BackupType ([Req:MetainfoBackupType]): Mandatory field with
+    type of the backup, only string "full" and "inc" supported.
+  * DataUuid ([Req:OrderedProcessing]): Optional unique identifier
+    of this file, e.g. when it may be possible, that datasets
+    with same timestamp might be available from a single source.
+    To allow reuse of DataUuid also for [Req:DetectSpoolingManipulations],
+    it has to be unique not only for a single source but for all
+    sources from a machine or even globally. This has to hold
+    true also when two source produce identical data. Otherwise
+    items with same Uuid could be swapped. It should be the same
+    when rerunning exactly the same backup for a single source
+    with identical state and data twice, e.g. when source wrote
+    data to sink before failing to complete the last steps.
+  * HandlingPolicy: Optional list of strings from set [A-Za-z0-9 ./-]
+    defining how a downstream backup sink or storage maintenance
+    process should handle the file. No list or an empty list is
+    allowed. Receiver has to know how to deal with a given policy.
+  * MetaDataSignature ([Req:DetectSpoolingManipulations]): A base64
+    encoded binary PGP signature on the whole metadata json artefact
+    with MetaDataSignature field already present but set to null
+    and TransferAttributes field missing.
+  * Predecessor ([Req:OrderedProcessing]): String with UUID of
+    file to be processed before this one.
+  * StorageFileChecksumSha512: The base64 binary checksum of the
+    stored backup file. As the file might be encrypted, this does
+    not need to match the checksum of the embedded content.
+  * StorageFileSignature: Base64 encoded data of binary PGP-signature
+    made on the storage file immediately after creation. While
+    signatures embedded in the encrypted storage file itself are
+    problematic to detect manipulation on the source system between
+    creation and retrieval, this detached signature can be easily
+    copied from the source system to another more trustworthy
+    machine, e.g. by sending as mail or writing to remote syslog.
+    ([Req:NonRepudiation])
+  * Timestamp: Backup content timestamp in seconds since 1970.
+    This field is mandatory.
+
+* Storage:
+  * The storage uses one JSON artefact per stored backup data
+    element containing a list of two items: the first one is the
+    element's metainfo, the second one the dictionary containing
+    the attributes.
+
+* Synchronization:
+
+  * Daemons shall monitor the local storage to offer backup data
+    elements to remote synchronization agents based on the local
+    policy.
+  * Daemons shall also fetch remote resources when offered and
+    local storage is acceptable according to policy.
+
+  * TransferAttributes: A dictionary with attributes set by the
+    transfer proceses and used by backup data element announcement
+    and storage policies to optimize operation. Each attribute
+    holds a list of attribute values for each remote transfer
+    agent and probably also the transfer source.
+
+  * Transmission protocol: For interaction between the components,
+    a minimalistic transmission protocol shall be used.
+    * The protocol implementation shall be easily replaceable.
+
+* BackupGenerator:
+  * The generator can write to a single but configurable sink,
+    thus enabling both local file storage but also remote fetch.
+  * It keeps track of the Schedulable Source Units.
+  * It provides configuration support to the source units.
+  * It provides persistency support to the source units.

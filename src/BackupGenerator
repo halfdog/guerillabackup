@@ -1,0 +1,116 @@
+#!/usr/bin/python2.7 -BEsStt
+# This tool allows to generate handle scheduling of sources and
+# generation of backup data elements by writing them to a sink.
+
+import sys
+# Adjust the Python sites path to include only the guerillabackup
+# library addons, thus avoiding a large set of python site packages
+# to be included in code run with root privileges. Also remove
+# the local directory from the site path.
+sys.path = sys.path[1:]+['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib-enabled']
+
+import guerillabackup
+import os
+import re
+import time
+import traceback
+
+backupConfigDirName = '/etc/guerillabackup'
+unitNameRegex = re.compile('^[0-9A-Za-z]+$')
+
+argPos = 1
+while argPos < len(sys.argv):
+  argName = sys.argv[argPos]
+  argPos += 1
+  if not argName.startswith('--'):
+    print >>sys.stderr, 'Invalid argument "%s"' % argName
+    sys.exit(1)
+  if argName == '--ConfigDir':
+    backupConfigDirName = sys.argv[argPos]
+    argPos += 1
+    continue
+  print >>sys.stderr, 'Unknown parameter "%s"' % argName
+  sys.exit(1)
+
+mainConfig = {}
+mainConfigFileName = os.path.join(backupConfigDirName, 'config')
+if not os.path.exists(backupConfigDirName):
+  print >>sys.stderr, 'Configuration file %s does not exist' % repr(mainConfigFileName)
+  sys.exit(1)
+try:
+  mainConfig = {'guerillabackup': guerillabackup}
+  execfile(mainConfigFileName, mainConfig, mainConfig)
+  mainConfig.__delitem__('__builtins__')
+except Exception as loadException:
+  print >>sys.stderr, 'Failed to load configuration "%s": %s' % (mainConfigFileName, str(loadException))
+  traceback.print_tb(sys.exc_info()[2])
+  sys.exit(1)
+
+# Initialize the sink.
+backupSinkClass = mainConfig.get(
+    'GeneratorSinkClass', guerillabackup.DefaultFileSystemSink)
+backupSink = backupSinkClass(mainConfig)
+
+# Now search the unit directory and load all units that should
+# be scheduled.
+unitList = []
+unitDir = os.path.join(backupConfigDirName, 'units')
+unitDirFileList = os.listdir(unitDir)
+for unitFileName in unitDirFileList[:]:
+  if unitFileName.endswith('.config'):
+# Ignore config files for now, will be loaded when handling the
+# unit main file.
+    continue
+  if (unitFileName == 'Readme.txt') or (unitFileName.endswith('.template')):
+# Ignore main templates and Readme.txt also.
+    unitDirFileList.remove(unitFileName)
+    continue
+
+  matcher = unitNameRegex.match(unitFileName)
+  if matcher == None:
+    continue
+  unitDirFileList.remove(unitFileName)
+
+# See if there is a configuration file to load before initializing
+# the unit. Clone the main configuration anyway to avoid accidental
+# modification by units.
+  unitConfig = dict(mainConfig)
+  unitConfigFileName = os.path.join(unitDir, '%s.config' % unitFileName)
+  if os.path.exists(unitConfigFileName):
+    try:
+      unitDirFileList.remove(unitFileName+'.config')
+    except:
+      pass
+    execfile(unitConfigFileName, unitConfig, unitConfig)
+    unitConfig.__delitem__('__builtins__')
+
+# Load the code within a new namespace and create unit object
+# from class with the same name as the file.
+  localsDict = {}
+  execfile(os.path.join(unitDir, unitFileName), localsDict, localsDict)
+  unitClass = localsDict[guerillabackup.GENERATOR_UNIT_CLASS_KEY]
+  unitObject = unitClass(unitFileName, unitConfig)
+  unitList.append(unitObject)
+
+for unhandledFileName in unitDirFileList:
+  print >>sys.stderr, 'WARNING: File %s/%s is not unit definition nor unit configuration for activated unit' % (unitDir, unhandledFileName)
+
+# Now all units are loaded, start the scheduling.
+while True:
+  immediateUnitList = []
+  nextInvocationTime = 3600
+  for unit in unitList:
+    unitInvocationTime = unit.getNextInvocationTime()
+    if unitInvocationTime == 0:
+      immediateUnitList.append(unit)
+    nextInvocationTime = min(nextInvocationTime, unitInvocationTime)
+
+  if len(immediateUnitList) != 0:
+    for unit in immediateUnitList:
+      unit.invokeUnit(backupSink)
+# Clear the next invocation time, we do not know how long we spent
+# inside the scheduled units.
+    nextInvocationTime = 0
+
+  if nextInvocationTime > 0:
+    time.sleep(nextInvocationTime)

@@ -1,0 +1,100 @@
+#!/usr/bin/python2.7 -BEsStt
+# This file defines a simple transfer service, that supports inbound
+# connections via a listening socket or receiving of file descriptors
+# if supported. An authentication helper may then provide the
+# agentId information. Otherwise it is just the base64 encoded
+# binary struct sockAddr information extracted from the file descriptor.
+# Authorization has to be performed outside the this service.
+
+import sys
+# Adjust the Python sites path to include only the guerillabackup
+# library addons, thus avoiding a large set of python site packages
+# to be included in code run with root privileges. Also remove
+# the local directory from the site path.
+sys.path = sys.path[1:] + ['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib-enabled']
+
+import errno
+import os
+import re
+import time
+
+import guerillabackup
+from guerillabackup.DefaultFileStorage import DefaultFileStorage
+from guerillabackup.Transfer import SimpleTransferAgent
+from guerillabackup.Transfer import SocketConnectorService
+
+def createPolicy(config, classNameKey, initArgsKey):
+  policyClass = config.get(classNameKey, None)
+  if policyClass == None:
+    return None
+  policyInitArgs = config.get(initArgsKey, None)
+  if policyInitArgs == None:
+    return policyClass(config)
+  policyInitArgs = [config]+policyInitArgs
+  return policyClass(*policyInitArgs)
+
+
+serviceConfigFileName = '/etc/guerillabackup/config'
+
+argPos = 1
+while argPos < len(sys.argv):
+  argName = sys.argv[argPos]
+  argPos += 1
+  if not argName.startswith('--'):
+    print >>sys.stderr, 'Invalid argument "%s"' % argName
+    sys.exit(1)
+  if argName == '--Config':
+    serviceConfigFileName = sys.argv[argPos]
+    argPos += 1
+    continue
+  print >>sys.stderr, 'Unknown parameter "%s"' % argName
+  sys.exit(1)
+
+if not os.path.exists(serviceConfigFileName):
+  print >>sys.stderr, 'Configuration file %s does not exist' % repr(serviceConfigFileName)
+  sys.exit(1)
+mainConfig = {}
+try:
+  mainConfig = {'guerillabackup': guerillabackup}
+  execfile(serviceConfigFileName, mainConfig, mainConfig)
+  mainConfig.__delitem__('__builtins__')
+except:
+  print >>sys.stderr, 'Failed to load configuration %s' % repr(serviceConfigFileName)
+  import traceback
+  traceback.print_tb(sys.exc_info()[2])
+  sys.exit(1)
+
+# Initialize the storage.
+storageDirName = mainConfig.get('TransferServiceStorageBaseDir', None)
+if storageDirName == None:
+  storageDirName = mainConfig.get(
+      guerillabackup.DefaultFileSystemSink.SINK_BASEDIR_KEY, None)
+if storageDirName == None:
+  print >>sys.stderr, 'No storage configured, use configuration key "TransferServiceStorageBaseDir"'
+  sys.exit(1)
+if not os.path.isdir(storageDirName):
+  print >>sys.stderr, 'Storage directory %s does not exist or is inaccessible' % repr(storageDirName)
+  sys.exit(1)
+
+storage = DefaultFileStorage(storageDirName, mainConfig)
+transferAgent = SimpleTransferAgent()
+runtimeDataDirPathname = guerillabackup.getRuntimeDataDirPathname(mainConfig)
+
+receiverPolicy = createPolicy(mainConfig,
+    guerillabackup.TRANSFER_RECEIVER_POLICY_CLASS_KEY,
+    guerillabackup.TRANSFER_RECEIVER_POLICY_INIT_ARGS_KEY)
+senderPolicy = createPolicy(mainConfig,
+    guerillabackup.TRANSFER_SENDER_POLICY_CLASS_KEY,
+    guerillabackup.TRANSFER_SENDER_POLICY_INIT_ARGS_KEY)
+
+try:
+  os.mkdir(runtimeDataDirPathname, 0x1c0)
+except OSError as mkdirError:
+  if mkdirError.errno != errno.EEXIST:
+    raise
+
+connectorService = SocketConnectorService(
+    os.path.join(runtimeDataDirPathname, 'transfer.socket'),
+    receiverPolicy, senderPolicy, storage, transferAgent)
+
+connectorService.run()

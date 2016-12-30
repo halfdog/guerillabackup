@@ -1,0 +1,137 @@
+Introduction:
+=============
+
+This document provides information on the implementation side
+design decisions and the blueprint of the implementation itself.
+
+
+Directory structure:
+====================
+
+* /etc/guerillabackup: This is the default configuration directory.
+  * config: This is the main GuerillaBackup configuration file.
+    Settings can be overridden e.g. in unit configuration files.
+  * keys: This directory is the default backup encryption key
+    location. Currently this is the home directory of a GnuPG
+    key store.
+  * lib-enabled: This directory is included in the site-path by
+    default. Add symlinks to include specific Python packages
+    or machine/organisation specific code.
+  * units: The units directory contains the enabled backup data
+    generation units. To enable a unit, a symbolic link to the
+    unit definition file has to be created. The name of the symlink
+    has to consist only of letters and numbers. For units with
+    an associated configuration file named "[unitname].config",
+    configuration parameters from the main configuration file
+    can be overridden within the unit-specific configuration.
+* /var/lib/guerillabackup: This directory is usually only readable
+  by root user unless transfer agents with different UID are configured.
+  * data: where backuped data from local backups is stored, usually
+    by the default sink.
+  * state: State persistency directory for all backup procedures.
+  * state/generators/[UnitName]: File or directory to store state
+    data for a given backup unit.
+  * state/agents: Directory to store additional information of
+    local backup data processing or remote transfer agents.
+* /var/run/guerillabackup: This directory is used to keep data,
+  only needed while guerillabackup tools are running. This data
+  can be discarded on reboot.
+  * transfer.socket: Default socket location for TransferServices.
+
+
+Library functions:
+==================
+
+* Configuration loading:
+
+Configuration loading happens in 2 stages:
+
+  * Loading of the main configuration.
+  * Loading of a component/module specific overlay configuration.
+    This is allows tools to perform modularized tasks, e.g. a backup
+    generator processing different sources, to apply userdefined
+    configuration alterations to the configuration of a single unit.
+    The overlay configuration is then merged with the main configuration.
+
+Defaults have to be set in the main configuration. A tool may
+refuse to start when required default values are missing in the
+configuration.
+
+
+Backup Generator:
+=================
+
+* Process pipelines:
+
+Pipeline implementation is designed to support both operating
+system processes using only filedescriptors for streaming and
+pure Python processes, that need to be run in a separate thread
+or are polled for normal operation.
+
+  * Error handling:
+
+Standard way to get processing errors is by calling the doProcess
+method, even when process is asynchronous. On error, the method
+should always return the same error message for a broken process
+until stop() is called.
+
+One error variant is, that operating system processes did not
+read all input from their input pipes and some data remains in
+buffers. This error has to be reported to the caller either from
+doProcess() or stop(), whatever comes first. The correct detection
+of input might fail, if a downstream component is stopped while
+the upstream is running and writing or flushing data to a pipe
+after the checks.
+
+
+Policy Based Data Synchronization:
+==================================
+
+* TransferAgent:
+
+This class provides the core functionality for in and outbound
+transfers. It has a single sender or receiver transfer policy
+or both attached. Protocol connections are attached to it using
+a ConnectorService. The agent does not care about authentication
+any more: everything relevant for authorization has to be provided
+by the ConnectorService and stored to the TransferContext.
+
+* ConnectorService:
+
+A service to establish in or outbound connections to an active
+TransferAgent. Implementation will vary depending on underlying
+protocol, e.g. TCP, socket, ... and authentication type, which
+is also handled by the ConnectorService.
+
+* ClientProtocolInterface:
+
+Classes implementing this interface are passed to the TransferAgent
+by the ConnectorService to allow outbound calls to the other agent.
+
+* ReceiverStoreDataTransferPolicy:
+
+This class defines a receiver policy, that attempts to fetch all
+data elements offered by the remote transfer agent.
+
+* ReceiverTransferPolicy:
+
+This is the common superinterface of all receiver transfer policies.
+
+* ServerProtocolInterface:
+
+This is the server side protocol adapter to be provided to the
+transfer service to forward remote requests to the local SenderPolicy.
+
+* SenderMoveDataTransferPolicy:
+
+This is a simple sender transfer policy just advertising all resources
+for transfer and removing them or marking them as transfered as
+soon as remote side confirms sucessful transfer. A file with a
+mark will not be offered for download any more.
+
+* SenderTransferPolicy:
+
+This is the common superinterface of all sender side transfer
+policies. A policy implementation has perform internal consistency
+checks after data modification as needed, the applyPolicy call
+is only to notify policy about state changes due to transfers.
