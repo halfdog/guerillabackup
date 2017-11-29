@@ -68,21 +68,27 @@ class OSProcessPipelineExecutionInstance(
 # Process output instance of this process only when no output
 # file descriptor is set.
     self.processOutput = None
-# This exception holds any processing error until stop() is called.
+# This exception holds any processing error until doProcess()
+# or stop() is called.
     self.processingException = None
 
   def createProcess(self, outputFd):
     """Create the process.
     @param outputFd if not None, use this as output stream descriptor."""
 
+# Create the process file descriptor pairs manually. Otherwise
+# it is not possible to wait() for the process first and continue
+# to read from the other side of the pipe after garbage collection
+# of the process object.
     self.inputPipe = None
-    outputStream = subprocess.PIPE
+    outputPipeFds = None
     if outputFd is None:
-      outputStream = outputFd
+      outputPipeFds = os.pipe2(os.O_CLOEXEC)
+      outputFd = outputPipeFds[1]
     if self.upstreamProcessOutput.getOutputStreamDescriptor() is None:
       self.process = subprocess.Popen(
           self.execArgs, executable=self.executable, stdin=subprocess.PIPE,
-          stdout=outputStream)
+          stdout=outputFd)
       self.inputPipe = self.process.stdin
       flags = fcntl.fcntl(self.inputPipe.fileno(), fcntl.F_GETFL)
       fcntl.fcntl(self.inputPipe.fileno(), fcntl.F_SETFL, flags|os.O_NONBLOCK)
@@ -90,15 +96,19 @@ class OSProcessPipelineExecutionInstance(
       self.process = subprocess.Popen(
           self.execArgs, executable=self.executable,
           stdin=self.upstreamProcessOutput.getOutputStreamDescriptor(),
-          stdout=outputStream)
+          stdout=outputFd)
 
     self.processOutput = None
-    if outputFd is None:
+    if outputPipeFds != None:
+# Close the write side now.
+      os.close(outputPipeFds[1])
       self.processOutput = TransformationProcessOutputStream(
-          self.process.stdout.fileno())
+          outputPipeFds[0])
 
   def getProcessOutput(self):
     """Get the output connector of this transformation process."""
+    if self.processState != OSProcessPipelineExecutionInstance.STATE_NOT_STARTED:
+      raise Exception('Output manipulation only when not started yet')
     if self.process is None:
       self.createProcess(None)
     if self.processOutput is None:
@@ -112,6 +122,8 @@ class OSProcessPipelineExecutionInstance(
     to a file or network descriptor.
     @throw Exception if this process does not support setting
     of output stream descriptors."""
+    if self.processState != OSProcessPipelineExecutionInstance.STATE_NOT_STARTED:
+      raise Exception('Output manipulation only when not started yet')
     if self.process != None:
       raise Exception('No setting of output stream after previous ' \
           'setting or call to getProcessOutput')
@@ -120,7 +132,7 @@ class OSProcessPipelineExecutionInstance(
   def checkConnected(self):
     """Check if this process instance is already connected to
     an output, e.g. via getProcessOutput or setProcessOutputStream."""
-    if self.process is None:
+    if (self.processState == OSProcessPipelineExecutionInstance.STATE_NOT_STARTED) and (self.process is None):
       raise Exception('Operation mode not known while not fully connected')
 # Process instance only created when connected, so everything OK.
 
@@ -151,19 +163,29 @@ class OSProcessPipelineExecutionInstance(
     if self.processState == OSProcessPipelineExecutionInstance.STATE_ENDED:
       return None
 
-# Clear any pending processing exceptions.
+# Clear any pending processing exceptions. This is the last chance
+# for reporting anyway.
     stopException = self.processingException
     self.processingException = None
 
-    if self.isRunning():
+    if self.processState == OSProcessPipelineExecutionInstance.STATE_RUNNING:
+# The process was not stopped yet, do it. There is a small chance
+# that we send a signal to a dead process before waiting on it
+# and hence we would have a normal termination here. Ignore that
+# case, a stop() indicates need for abnormal termination with
+# risk of data loss.
       self.process.kill()
       self.process.wait()
+      self.process = None
+      self.processState = OSProcessPipelineExecutionInstance.STATE_SHUTDOWN
+
+# Now we are in STATE_SHUTDOWN.
+    self.finishProcess()
+# If there was no previous exception, copy any exception from
+# finishing the process.
     if stopException is None:
-# See if there is any other reason to report an error. At first
-# make sure, all upstream data was read.
-      readData = self.upstreamProcessOutput.readData(1<<16)
-      if readData != None:
-        stopException = Exception('Not all upstream data processed')
+      stopException = self.processingException
+      self.processingException = None
     return stopException
 
   def isRunning(self):
@@ -172,28 +194,37 @@ class OSProcessPipelineExecutionInstance(
     If there are any unreported pending errors from execution,
     this method will return True until doProcess() or stop() is
     called at least once."""
-    if (self.process is None) or (self.process.returncode != None):
+    if self.processState in [OSProcessPipelineExecutionInstance.STATE_NOT_STARTED, OSProcessPipelineExecutionInstance.STATE_ENDED]:
       return False
     if self.processingException != None:
+# There is a pending exception, which is cleared only in doProcess()
+# or stop(), so pretend that the process is still running.
       return True
 
-    (pid, status) = os.waitpid(self.process.pid, os.WNOHANG)
-    if pid == 0:
-      return True
-# We are not running any more, an additional invocation of this
-# method would result in waitpid exception or wrong results as
-# process is not running any more.
-    self.process = None
-    if (status&0xff) != 0:
-      self.processingException = Exception('Process end by signal %d, ' \
-          'status 0x%x' % (status&0xff, status))
-    elif (status>>8) not in self.allowedExitStatusList:
-      self.processingException = Exception('Process end with unexpected ' \
-          'exit status %d' % (status>>8))
+    if self.processState == OSProcessPipelineExecutionInstance.STATE_RUNNING:
+      (pid, status) = os.waitpid(self.process.pid, os.WNOHANG)
+      if pid == 0:
+        return True
+      self.process = None
+      self.processState = OSProcessPipelineExecutionInstance.STATE_SHUTDOWN
+      if (status&0xff) != 0:
+        self.processingException = Exception('Process end by signal %d, ' \
+            'status 0x%x' % (status&0xff, status))
+      elif (status>>8) not in self.allowedExitStatusList:
+        self.processingException = Exception('Process end with unexpected ' \
+            'exit status %d' % (status>>8))
+
+# We are in shutdown here. See if we can finish that phase immediately.
+    if self.processingException is None:
+      try:
+        self.upstreamProcessOutput.close()
+        self.processState = OSProcessPipelineExecutionInstance.STATE_ENDED
+      except Exception as closeException:
+        self.processingException = closeException
 
 # Pretend that we are still running so that pending exception
 # is reported with next doProcess() call.
-    return self.processingException != None
+    return self.processState != OSProcessPipelineExecutionInstance.STATE_ENDED
 
   def doProcess(self):
     """This method triggers the data transformation operation
@@ -221,7 +252,10 @@ class OSProcessPipelineExecutionInstance(
     if self.processingException != None:
       processingException = self.processingException
       self.processingException = None
-      self.processState = 1
+# We are dead here anyway, close inputs and outputs ignoring any
+# data possibly lost.
+      self.finishProcess()
+      self.processState = OSProcessPipelineExecutionInstance.STATE_ENDED
       raise processingException
 
     if self.inputPipe != None:
@@ -232,16 +266,12 @@ class OSProcessPipelineExecutionInstance(
           self.inputPipe = None
       if ((self.upstreamProcessOutputBuffer != None) and
           (len(self.upstreamProcessOutputBuffer) != 0)):
-        try:
-          writeLength = self.inputPipe.write(self.upstreamProcessOutputBuffer)
-          if writeLength == len(self.upstreamProcessOutputBuffer):
-            self.upstreamProcessOutputBuffer = b''
-          else:
-            self.upstreamProcessOutputBuffer = self.upstreamProcessOutputBuffer[writeLength:]
-          return writeLength
-        except Exception as processingException:
-          self.processingException = processingException
-          raise
+        writeLength = self.inputPipe.write(self.upstreamProcessOutputBuffer)
+        if writeLength == len(self.upstreamProcessOutputBuffer):
+          self.upstreamProcessOutputBuffer = b''
+        else:
+          self.upstreamProcessOutputBuffer = self.upstreamProcessOutputBuffer[writeLength:]
+        return writeLength
     if self.isRunning():
 # Pretend that we are still waiting for more input, thus polling
 # may continue when at least another component moved data.
@@ -257,3 +287,31 @@ class OSProcessPipelineExecutionInstance(
 # not a file descriptor, writing to the input pipe may block.
     if self.inputPipe != None:
       writeStreamList.append(self.inputPipe.fileno())
+
+
+  def finishProcess(self):
+    """This method cleans up the current process after operating
+    system process termination but maybe before handling of pending
+    exceptions. The method will set the processingException when
+    finishProcess caused any errors. An error is also when this
+    method is called while upstream did not close the upstream
+    output stream yet."""
+    readData = self.upstreamProcessOutput.readData(64)
+    if readData != None:
+      if len(readData) == 0:
+        self.processingException = Exception('Upstream did not finish yet, data might be lost')
+      else:
+        self.processingException = Exception('Not all upstream data processed')
+# Upstream is delivering data that was not processed. Close the
+# output so that upstream will also notice when attempting to
+# write to will receive an exception.
+      self.upstreamProcessOutput.close()
+    self.upstreamProcessOutput = None
+
+    if self.upstreamProcessOutputBuffer != None:
+      self.processingException = Exception(
+          'Output buffers to process not drained yet, %d bytes lost' %
+              len(self.upstreamProcessOutputBuffer))
+      self.upstreamProcessOutputBuffer = None
+
+    self.process = None
