@@ -30,3 +30,8 @@ override_dh_systemd_enable:
 # code.
 override_dh_systemd_start:
 	dh_systemd_start --no-start
+
+override_dh_fixperms:
+	dh_fixperms
+	chmod -R 00700 -- debian/guerillabackup/var/lib/guerillabackup
+	chmod 00700 -- debian/guerillabackup/etc/guerillabackup/keys
