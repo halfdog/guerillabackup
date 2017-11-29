@@ -2,11 +2,12 @@
 OS process based pipeline elements."""
 
 import fcntl
+import os
+import subprocess
+
 import guerillabackup
 from guerillabackup.TransformationProcessOutputStream import NullProcessOutputStream
 from guerillabackup.TransformationProcessOutputStream import TransformationProcessOutputStream
-import os
-import subprocess
 
 class OSProcessPipelineElement(
     guerillabackup.TransformationPipelineElementInterface):
@@ -14,11 +15,17 @@ class OSProcessPipelineElement(
   elements, e.g. for compression, encryption, signing. To really
   start execution of a transformation pipeline, transformation
   process instances have to be created for each pipe element."""
-  def __init__(self, executable, execArgs, allowedExitStatusList=[0]):
+
+  def __init__(self, executable, execArgs, allowedExitStatusList=None):
+    """Create the OSProcessPipelineElement element.
+    @param allowedExitStatusList when not defined, only command
+    exit code of 0 is accepted to indicated normal termination."""
     self.executable = executable
     self.execArgs = execArgs
     if not guerillabackup.isValueListOfType(self.execArgs, str):
       raise Exception('execArgs have to be list of strings')
+    if allowedExitStatusList is None:
+      allowedExitStatusList = [0]
     self.allowedExitStatusList = allowedExitStatusList
 
   def getExecutionInstance(self, upstreamProcessOutput):
@@ -33,20 +40,30 @@ class OSProcessPipelineElement(
 
 class OSProcessPipelineExecutionInstance(
     guerillabackup.TransformationProcessInterface):
-  def __init__(self, executable, execArgs, upstreamProcessOutput, allowedExitStatusList=[0]):
+  """This class defines the execution instance of an OSProcessPipeline
+  element."""
+
+  STATE_NOT_STARTED = 0
+  STATE_RUNNING = 1
+# This state reached when the process has already terminated but
+# input/output shutdown is still pending.
+  STATE_SHUTDOWN = 2
+  STATE_ENDED = 3
+
+  def __init__(self, executable, execArgs, upstreamProcessOutput, allowedExitStatusList):
     self.executable = executable
     self.execArgs = execArgs
     self.upstreamProcessOutput = upstreamProcessOutput
-    if self.upstreamProcessOutput == None:
+    if self.upstreamProcessOutput is None:
 # Avoid reading from real stdin, use replacement output.
       self.upstreamProcessOutput = NullProcessOutputStream()
-    self.upstreamProcessOutputBuffer = ''
+    self.upstreamProcessOutputBuffer = b''
     self.inputPipe = None
     self.allowedExitStatusList = allowedExitStatusList
 
 # Simple state tracking to be more consistent on multiple invocations
 # of the same method. States are "not starte", "running", "ended"
-    self.processState = 0
+    self.processState = OSProcessPipelineExecutionInstance.STATE_NOT_STARTED
     self.process = None
 # Process output instance of this process only when no output
 # file descriptor is set.
@@ -60,29 +77,31 @@ class OSProcessPipelineExecutionInstance(
 
     self.inputPipe = None
     outputStream = subprocess.PIPE
-    if outputFd != None:
+    if outputFd is None:
       outputStream = outputFd
-    if self.upstreamProcessOutput.getOutputStreamDescriptor() == None:
-      self.process = subprocess.Popen(self.execArgs, executable=self.executable,
-          stdin=subprocess.PIPE, stdout=outputStream)
+    if self.upstreamProcessOutput.getOutputStreamDescriptor() is None:
+      self.process = subprocess.Popen(
+          self.execArgs, executable=self.executable, stdin=subprocess.PIPE,
+          stdout=outputStream)
       self.inputPipe = self.process.stdin
       flags = fcntl.fcntl(self.inputPipe.fileno(), fcntl.F_GETFL)
       fcntl.fcntl(self.inputPipe.fileno(), fcntl.F_SETFL, flags|os.O_NONBLOCK)
     else:
-      self.process = subprocess.Popen(self.execArgs, executable=self.executable,
+      self.process = subprocess.Popen(
+          self.execArgs, executable=self.executable,
           stdin=self.upstreamProcessOutput.getOutputStreamDescriptor(),
           stdout=outputStream)
 
     self.processOutput = None
-    if outputFd == None:
+    if outputFd is None:
       self.processOutput = TransformationProcessOutputStream(
           self.process.stdout.fileno())
 
   def getProcessOutput(self):
     """Get the output connector of this transformation process."""
-    if self.process == None:
+    if self.process is None:
       self.createProcess(None)
-    if self.processOutput == None:
+    if self.processOutput is None:
       raise Exception('No access to process output in stream mode')
     return self.processOutput
 
@@ -94,13 +113,14 @@ class OSProcessPipelineExecutionInstance(
     @throw Exception if this process does not support setting
     of output stream descriptors."""
     if self.process != None:
-      raise Exception('No setting of output stream after previous setting or call to getProcessOutput')
+      raise Exception('No setting of output stream after previous ' \
+          'setting or call to getProcessOutput')
     self.createProcess(processOutputStream)
 
   def checkConnected(self):
     """Check if this process instance is already connected to
     an output, e.g. via getProcessOutput or setProcessOutputStream."""
-    if self.process == None:
+    if self.process is None:
       raise Exception('Operation mode not known while not fully connected')
 # Process instance only created when connected, so everything OK.
 
@@ -109,34 +129,36 @@ class OSProcessPipelineExecutionInstance(
     perform data processing on streams without any further interaction
     while running."""
     self.checkConnected()
-    return self.inputPipe == None
+    return self.inputPipe is None
 
   def start(self):
     """Start this execution process."""
-    if self.processState != 0:
+    if self.processState != OSProcessPipelineExecutionInstance.STATE_NOT_STARTED:
       raise Exception('Already started')
     self.checkConnected()
 # The process itself was already started when being connected.
 # Just update the state here.
-    self.processState = 1
+    self.processState = OSProcessPipelineExecutionInstance.STATE_RUNNING
 
   def stop(self):
     """Stop this execution process when still running.
     @return None when the the instance was already stopped, information
     about stopping, e.g. the stop error message when the process
     was really stopped."""
-    if self.processState == 0:
+    if self.processState == OSProcessPipelineExecutionInstance.STATE_NOT_STARTED:
       raise Exception('Not started')
 # We are already stopped, do othing here.
-    if self.processState == 2:
+    if self.processState == OSProcessPipelineExecutionInstance.STATE_ENDED:
       return None
+
 # Clear any pending processing exceptions.
     stopException = self.processingException
     self.processingException = None
+
     if self.isRunning():
       self.process.kill()
       self.process.wait()
-    if stopException == None:
+    if stopException is None:
 # See if there is any other reason to report an error. At first
 # make sure, all upstream data was read.
       readData = self.upstreamProcessOutput.readData(1<<16)
@@ -150,10 +172,11 @@ class OSProcessPipelineExecutionInstance(
     If there are any unreported pending errors from execution,
     this method will return True until doProcess() or stop() is
     called at least once."""
-    if (self.process == None) or (self.process.returncode != None):
+    if (self.process is None) or (self.process.returncode != None):
       return False
     if self.processingException != None:
       return True
+
     (pid, status) = os.waitpid(self.process.pid, os.WNOHANG)
     if pid == 0:
       return True
@@ -162,9 +185,11 @@ class OSProcessPipelineExecutionInstance(
 # process is not running any more.
     self.process = None
     if (status&0xff) != 0:
-      self.processingException = Exception('Process end by signal %d, status 0x%x' % (status&0xff, status))
-    elif not (status>>8) in self.allowedExitStatusList:
-      self.processingException = Exception('Process end with unexpected exit status %d' % (status>>8))
+      self.processingException = Exception('Process end by signal %d, ' \
+          'status 0x%x' % (status&0xff, status))
+    elif (status>>8) not in self.allowedExitStatusList:
+      self.processingException = Exception('Process end with unexpected ' \
+          'exit status %d' % (status>>8))
 
 # Pretend that we are still running so that pending exception
 # is reported with next doProcess() call.
@@ -189,9 +214,9 @@ class OSProcessPipelineExecutionInstance(
     due to filled buffers but should be attemted again. A value
     below zero indicates that all input data was processed and
     output buffers were flushed already."""
-    if self.processState == 0:
+    if self.processState == OSProcessPipelineExecutionInstance.STATE_NOT_STARTED:
       raise Exception('Not started')
-    if self.processState == 2:
+    if self.processState == OSProcessPipelineExecutionInstance.STATE_ENDED:
       raise Exception('Already stopped')
     if self.processingException != None:
       processingException = self.processingException
@@ -202,7 +227,7 @@ class OSProcessPipelineExecutionInstance(
     if self.inputPipe != None:
       if len(self.upstreamProcessOutputBuffer) == 0:
         self.upstreamProcessOutputBuffer = self.upstreamProcessOutput.readData(1<<16)
-        if self.upstreamProcessOutputBuffer == None:
+        if self.upstreamProcessOutputBuffer is None:
           self.inputPipe.close()
           self.inputPipe = None
       if ((self.upstreamProcessOutputBuffer != None) and
@@ -210,7 +235,7 @@ class OSProcessPipelineExecutionInstance(
         try:
           writeLength = self.inputPipe.write(self.upstreamProcessOutputBuffer)
           if writeLength == len(self.upstreamProcessOutputBuffer):
-            self.upstreamProcessOutputBuffer = ''
+            self.upstreamProcessOutputBuffer = b''
           else:
             self.upstreamProcessOutputBuffer = self.upstreamProcessOutputBuffer[writeLength:]
           return writeLength

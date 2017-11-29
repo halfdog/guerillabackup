@@ -10,8 +10,6 @@ process might also remove them without causing damage."""
 import base64
 import datetime
 import errno
-import guerillabackup
-from guerillabackup.BackupElementMetainfo import BackupElementMetainfo
 import hashlib
 import json
 import os
@@ -19,6 +17,9 @@ import subprocess
 import sys
 import time
 import traceback
+
+import guerillabackup
+from guerillabackup.BackupElementMetainfo import BackupElementMetainfo
 
 # This is the key to the list of tar backups to schedule and perform
 # using the given unit. Each entry has to be a dictionary containing
@@ -102,7 +103,7 @@ class TarBackupUnitDescription:
     self.encryptionKeyName = None
     self.keepOldIndicesCount = 0
 
-    for configKey, configValue in descriptionDict.iteritems():
+    for configKey, configValue in descriptionDict.items():
       if ((configKey == 'PreBackupCommand') or
           (configKey == 'PostBackupCommand') or
           (configKey == 'FullOverrideCommand') or
@@ -128,11 +129,11 @@ class TarBackupUnitDescription:
       elif configKey == 'IgnoreBackupRaces':
         self.ignoreBackupRacesFlag = configValue
       elif ((configKey == 'FullBackupTiming') or
-          (configKey == 'IncBackupTiming')):
+            (configKey == 'IncBackupTiming')):
         if (not isinstance(configValue, list)) or (len(configValue) != 4):
           raise Exception(
               'Parameter %s has to be list with 4 values' % configKey)
-        if configValue[0] == None:
+        if configValue[0] is None:
           raise Exception('Parameter %s minimum interval value must not be None' % configKey)
         for timeValue in configValue:
           if (timeValue != None) and (not isinstance(timeValue, int)):
@@ -157,7 +158,7 @@ class TarBackupUnitDescription:
       else:
         raise Exception('Unsupported parameter %s' % configKey)
 
-    if self.fullBackupTiming == None:
+    if self.fullBackupTiming is None:
       raise Exception('Mandatory FullBackupTiming parameter missing')
 
 # The remaining values are not from the unit configuration but
@@ -183,7 +184,7 @@ class TarBackupUnitDescription:
         return (self.nextRetryTime-currentTime, None)
       self.nextRetryTime = None
 
-    if self.lastFullBackupTime == None:
+    if self.lastFullBackupTime is None:
       return (-self.fullBackupTiming[1], 'full')
 # Use this as default value. At invocation time, unit may still
 # decide if backup generation is really neccessary.
@@ -206,7 +207,7 @@ class TarBackupUnitDescription:
       return result
 
     lastOffset = currentTime-self.lastAnyBackupTime
-    if self.incBackupTiming[2] == None:
+    if self.incBackupTiming[2] is None:
 # Normal minimum, maximum timing mode.
       delta = self.incBackupTiming[0]-lastOffset
       if delta < result[0]:
@@ -252,8 +253,9 @@ class TarBackupUnitDescription:
   def getJsonData(self):
     """Return the state of this object in a format suitable for
     JSON serialization."""
-    return [self.lastFullBackupTime, self.lastAnyBackupTime,
-        base64.b64encode(self.lastUuidValue)]
+    return [
+        self.lastFullBackupTime, self.lastAnyBackupTime,
+        str(base64.b64encode(self.lastUuidValue), 'ascii')]
 
 
 class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
@@ -275,13 +277,14 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 
     self.testModeFlag = configContext.get(guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY, False)
     if not isinstance(self.testModeFlag, bool):
-      raise Exception('Configuration parameter %s has to be boolean' % guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY)
+      raise Exception('Configuration parameter %s has to be ' \
+          'boolean' % guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY)
 
     backupConfigList = configContext.get(CONFIG_LIST_KEY, None)
-    if (backupConfigList == None) or (not isinstance(backupConfigList, dict)):
+    if (backupConfigList is None) or (not isinstance(backupConfigList, dict)):
       raise Exception('Configuration parameter %s missing or of wrong type' % CONFIG_LIST_KEY)
     self.backupUnitDescriptions = {}
-    for sourceUrl, configDef in backupConfigList.iteritems():
+    for sourceUrl, configDef in backupConfigList.items():
       self.backupUnitDescriptions[sourceUrl] = TarBackupUnitDescription(
           sourceUrl, configDef)
 
@@ -292,7 +295,7 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     try:
       persistencyDirFd = guerillabackup.openPersistencyFile(
           configContext, os.path.join('generators', self.unitName),
-          os.O_DIRECTORY|os.O_RDONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, 0700)
+          os.O_DIRECTORY|os.O_RDONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, 0o700)
 
       try:
         persistencyFileHandle = guerillabackup.secureOpenAt(
@@ -305,8 +308,8 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # See if the state.previous file exists, if yes, the unit is likely
 # to be broken. Refuse to do anything while in this state.
       try:
-        statResult = guerillabackup.guerillaOsFstatatFunction(
-            persistencyDirFd, 'state.previous', 0)
+        os.stat(
+            'state.previous', dir_fd=persistencyDirFd, follow_symlinks=False)
         raise Exception(
             'Persistency data inconsistencies: found stale previous state file')
       except OSError as statError:
@@ -314,7 +317,7 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
           raise
 # So there is only the current state file, if any.
       if persistencyFileHandle != None:
-        stateData = ''
+        stateData = b''
         while True:
           data = os.read(persistencyFileHandle, 1<<20)
           if len(data) == 0:
@@ -329,18 +332,19 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
         os.close(persistencyDirFd)
 
 # Start mangling of data after closing all file handles.
-    if stateData == None:
-      print >>sys.stderr, '%s: first time activation, no persistency data found' % self.unitName
+    if stateData is None:
+      print('%s: first time activation, no persistency data found' % self.unitName, file=sys.stderr)
     else:
-      stateInfo = json.loads(stateData)
+      stateInfo = json.loads(str(stateData, 'ascii'))
       if not isinstance(stateInfo, dict):
         raise Exception('Persistency data structure mismatch')
-      for url, stateData in stateInfo.iteritems():
+      for url, stateData in stateInfo.items():
         description = self.backupUnitDescriptions.get(url, None)
-        if description == None:
+        if description is None:
 # Ignore this state, user might have removed a single tar backup
 # configuration without deleting the UUID and timing data.
-          print >>sys.stderr, 'No tar backup configuration for %s resource state data %s' % (url, repr(stateData))
+          print('No tar backup configuration for %s resource state data %s' % (
+              url, repr(stateData)), file=sys.stderr)
           continue
         description.lastFullBackupTime = stateData[0]
         description.lastAnyBackupTime = stateData[1]
@@ -357,12 +361,12 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     currentTime = int(time.time())
     nextInvocationTime = None
     nextDescription = None
-    for url, description in self.backupUnitDescriptions.iteritems():
+    for url, description in self.backupUnitDescriptions.items():
       info = description.getNextInvocationInfo(currentTime)
-      if (nextInvocationTime == None) or (info[0] < nextInvocationTime):
+      if (nextInvocationTime is None) or (info[0] < nextInvocationTime):
         nextInvocationTime = info[0]
         nextDescription = description
-    if nextInvocationTime == None:
+    if nextInvocationTime is None:
       return None
     return (nextInvocationTime, nextDescription)
 
@@ -375,7 +379,7 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     @return 0 if the unit should be invoked immediately, the seconds
     to go otherwise."""
     nextUnitInfo = self.findNextInvocationUnit()
-    if nextUnitInfo == None:
+    if nextUnitInfo is None:
       return 3600
     if nextUnitInfo[0] < 0:
       return 0
@@ -407,7 +411,8 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
       nextIndexFileName = '%s.index.next' % indexFilenamePrefix
       nextIndexFileHandle = guerillabackup.secureOpenAt(
           persistencyDirFd, nextIndexFileName,
-          fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, fileCreateMode=0600)
+          fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY,
+          fileCreateMode=0o600)
       indexFilePathname = os.path.join(
           guerillabackup.getPersistencyBaseDirPathname(self.configContext),
           'generators', self.unitName, nextIndexFileName)
@@ -417,12 +422,13 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # to "full".
         indexStatResult = None
         try:
-          indexStatResult = guerillabackup.guerillaOsFstatatFunction(
-              persistencyDirFd, '%s.index' % indexFilenamePrefix, 0)
+          indexStatResult = os.stat(
+              '%s.index' % indexFilenamePrefix, dir_fd=persistencyDirFd,
+              follow_symlinks=False)
         except OSError as statError:
           if statError.errno != errno.ENOENT:
             raise
-        if indexStatResult == None:
+        if indexStatResult is None:
           backupType = 'full'
         else:
 # Copy content from current index to new one.
@@ -440,12 +446,14 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # Everything is prepared for backup, start it.
     if tarUnitDescription.preBackupCommandList != None:
       if self.testModeFlag:
-        print >>sys.stderr, 'No invocation of PreBackupCommand in test mode'
+        print('No invocation of PreBackupCommand in test mode', file=sys.stderr)
       else:
         process = subprocess.Popen(tarUnitDescription.preBackupCommandList)
         returnCode = process.wait()
         if returnCode != 0:
-          raise Exception('Pre backup command %s failed in %s, source %s' % (repr(tarUnitDescription.preBackupCommandList)[1:-1], self.unitName, tarUnitDescription.sourceUrl))
+          raise Exception('Pre backup command %s failed in %s, source %s' % (
+              repr(tarUnitDescription.preBackupCommandList)[1:-1],
+              self.unitName, tarUnitDescription.sourceUrl))
 
 # Start the unit itself.
     backupCommand = tarUnitDescription.getBackupCommand(
@@ -467,8 +475,7 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
       guerillabackup.runTransformationPipeline(pipelineInstances)
     except:
 # Just cleanup the incomplete index file.
-      guerillabackup.internalUnlinkAt(
-          persistencyDirFd, nextIndexFileName, 0)
+      os.unlink(nextIndexFileName, dir_fd=persistencyDirFd)
       raise
 
     digestData = pipelineInstances[-1].getDigestData()
@@ -488,7 +495,8 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # Also include the timestamp and source URL in the UUID calculation
 # to make UUID different for backup of identical data at (nearly)
 # same time.
-    currentUuidDigest.update(b'%d %s' % (currentTime, tarUnitDescription.sourceUrl))
+    currentUuidDigest.update(bytes('%d %s' % (
+        currentTime, tarUnitDescription.sourceUrl), sys.getdefaultencoding()))
     currentUuid = currentUuidDigest.digest()
     metaInfoDict['DataUuid'] = currentUuid
     metaInfoDict['StorageFileChecksumSha512'] = digestData
@@ -508,7 +516,9 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # on the backup created before but the failure might indicate,
 # that the corresponding PreBackupCommand was problematic. Thus
 # let the user resolve the problem manually.
-        raise Exception('Post backup command %s failed in %s, source %s' % (repr(tarUnitDescription.postBackupCommandList)[1:-1], self.unitName, tarUnitDescription.sourceUrl))
+        raise Exception('Post backup command %s failed in %s, source %s' % (
+            repr(tarUnitDescription.postBackupCommandList)[1:-1],
+            self.unitName, tarUnitDescription.sourceUrl))
 
     if tarUnitDescription.incBackupTiming != None:
 # See if there is an old index to compress and move, but only
@@ -528,7 +538,7 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
       if currentIndexFd != None:
         if tarUnitDescription.keepOldIndicesCount == 0:
           os.close(currentIndexFd)
-          guerillabackup.internalUnlinkAt(persistencyDirFd, currentIndexName, 0)
+          os.unlink(currentIndexName, dir_fd=persistencyDirFd)
         else:
           statData = os.fstat(currentIndexFd)
           targetFileTime = int(statData.st_mtime)
@@ -541,7 +551,7 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
               targetFileHandle = guerillabackup.secureOpenAt(
                   persistencyDirFd, targetFileName,
                   fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY,
-                  fileCreateMode=0600)
+                  fileCreateMode=0o600)
               break
             except OSError as indexBackupOpenError:
               if indexBackupOpenError.errno != errno.EEXIST:
@@ -556,21 +566,20 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
           if returnCode != 0:
             raise Exception('Failed to compress the old index: %s' % returnCode)
           os.close(currentIndexFd)
-# FIXME: we should use futimes, not available yet in python.
+# FIXME: we should use utime with targetFileHandle as pathlike
+# object, only available in Python3.6 and later.
           os.utime(
               '/proc/self/fd/%d' % targetFileHandle,
               (statData.st_mtime, statData.st_mtime))
           os.close(targetFileHandle)
-          guerillabackup.internalUnlinkAt(
-              persistencyDirFd, currentIndexName, 0)
+          os.unlink(currentIndexName, dir_fd=persistencyDirFd)
 
 # Now previous index was compressed or deleted, link the next
 # index to the current position.
-      guerillabackup.internalLinkAt(
-          persistencyDirFd, nextIndexFileName,
-          persistencyDirFd, currentIndexName, 0)
-      guerillabackup.internalUnlinkAt(
-          persistencyDirFd, nextIndexFileName, 0)
+      os.link(
+          nextIndexFileName, currentIndexName, src_dir_fd=persistencyDirFd,
+          dst_dir_fd=persistencyDirFd, follow_symlinks=False)
+      os.unlink(nextIndexFileName, dir_fd=persistencyDirFd)
 
       if tarUnitDescription.keepOldIndicesCount != -1:
 # So we should apply limits to the number of index backups.
@@ -592,7 +601,7 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
           if indexBackupPos+1 != len(fileList):
             raise Exception('Sorting of old backup indices inconsistent, refusing cleanup')
           for fileName in fileList[:-tarUnitDescription.keepOldIndicesCount]:
-            guerillabackup.internalUnlinkAt(persistencyDirFd, fileName, 0)
+            os.unlink(fileName, dir_fd=persistencyDirFd)
 
 # Update the UUID map as last step: if any of the steps above
 # would fail, currentUuid generated in next run will be identical
@@ -626,16 +635,16 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     try:
       while True:
         nextUnitInfo = self.findNextInvocationUnit()
-        if nextUnitInfo == None:
+        if nextUnitInfo is None:
           return None
         if nextUnitInfo[0] > 0:
           return nextUnitInfo[0]
 
-        if persistencyDirFd == None:
+        if persistencyDirFd is None:
 # Not opened yet, do it now.
           persistencyDirFd = guerillabackup.openPersistencyFile(
               self.configContext, os.path.join('generators', self.unitName),
-              os.O_DIRECTORY|os.O_RDONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, 0600)
+              os.O_DIRECTORY|os.O_RDONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, 0o600)
 
 # Try to process the current tar backup unit. There should be
 # no state change to persist or cleanup, just let any exception
@@ -643,7 +652,10 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
         try:
           self.processInput(nextUnitInfo[1], sink, persistencyDirFd)
         except Exception as processException:
-          print >>sys.stderr, '%s: Error processing tar %s, disabling it temporarily\n%s' % (self.unitName, repr(nextUnitInfo[1].sourceUrl), processException)
+          print('%s: Error processing tar %s, disabling it temporarily\n%s' % (
+              self.unitName,
+              repr(nextUnitInfo[1].sourceUrl), processException),
+                file=sys.stderr)
           traceback.print_tb(sys.exc_info()[2])
           nextUnitInfo[1].nextRetryTime = time.time()+3600
     finally:
@@ -652,7 +664,10 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
           os.close(persistencyDirFd)
           persistencyDirFd = None
         except Exception as closeException:
-          print >>sys.stderr, 'FATAL: Internal Error: failed to close persistency directory handle %d: %s' % (persistencyDirFd, str(closeException))
+          print('FATAL: Internal Error: failed to close persistency ' \
+              'directory handle %d: %s' % (
+                  persistencyDirFd, str(closeException)),
+                file=sys.stderr)
 
 
   def updateStateData(self, persistencyDirFd):
@@ -663,27 +678,28 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 
 # Create the data structures for writing.
     stateData = {}
-    for sourceUrl, description in self.backupUnitDescriptions.iteritems():
+    for sourceUrl, description in self.backupUnitDescriptions.items():
       stateData[sourceUrl] = description.getJsonData()
-    writeData = json.dumps(stateData)
+    writeData = bytes(json.dumps(stateData), 'ascii')
 
 # Try to replace the current state file. At first unlink the old
 # one.
     try:
-      guerillabackup.internalUnlinkAt(persistencyDirFd, 'state.old', 0)
+      os.unlink('state.old', dir_fd=persistencyDirFd)
     except OSError as unlinkError:
       if unlinkError.errno != errno.ENOENT:
         raise
 # Link the current to the old one.
     try:
-      guerillabackup.internalLinkAt(
-          persistencyDirFd, 'state.current', persistencyDirFd, 'state.old', 0)
+      os.link(
+          'state.current', 'state.old', src_dir_fd=persistencyDirFd,
+          dst_dir_fd=persistencyDirFd, follow_symlinks=False)
     except OSError as relinkError:
       if relinkError.errno != errno.ENOENT:
         raise
 # Unlink the current state. Thus we can then use O_EXCL on create.
     try:
-      guerillabackup.internalUnlinkAt(persistencyDirFd, 'state.current', 0)
+      os.unlink('state.current', dir_fd=persistencyDirFd)
     except OSError as relinkError:
       if relinkError.errno != errno.ENOENT:
         raise
@@ -692,7 +708,8 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     try:
       fileHandle = guerillabackup.secureOpenAt(
           persistencyDirFd, 'state.current',
-          fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, fileCreateMode=0600)
+          fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY,
+          fileCreateMode=0o600)
       os.write(fileHandle, writeData)
 # Also close handle within try, except block to catch also delayed
 # errors after write.
@@ -701,8 +718,9 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     except Exception as stateSaveException:
 # Writing of state information failed. Print out the state information
 # for manual reconstruction as last resort.
-      exceptionInfo = sys.exc_info()
-      print >>sys.stderr, 'Writing of state information failed: %s\nCurrent state: %s' % (str(stateSaveException), repr([self.lastInvocationTime, self.resourceUuidMap]))
+      print('Writing of state information failed: %s\nCurrent state: ' \
+          '%s' % (str(stateSaveException), repr(writeData)), file=sys.stderr)
+      traceback.print_tb(sys.exc_info()[2])
       raise
     finally:
       if fileHandle != None:

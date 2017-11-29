@@ -22,7 +22,8 @@ GeneralRuntimeDataDir = '[TmpDir]/run'
 # and encryption, you may want to disable the additional compression
 # step included in many encryption toosl, e.g. via "--compress-algo
 # none" in gpg.
-GeneralDefaultCompressionElement = guerillabackup.OSProcessPipelineElement('/bin/bzip2', ['/bin/bzip2', '-c9'])
+GeneralDefaultCompressionElement = guerillabackup.OSProcessPipelineElement(
+    '/bin/bzip2', ['/bin/bzip2', '-c9'])
 
 # This parameter defines the default encryption pipeline element
 # to use to encrypt backup data of any kind before sending it

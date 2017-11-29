@@ -2,15 +2,17 @@
 
 import base64
 import errno
-import guerillabackup
-from guerillabackup.BackupElementMetainfo import BackupElementMetainfo
-from guerillabackup.TransformationProcessOutputStream import TransformationProcessOutputStream
 import hashlib
 import json
 import os
 import re
 import sys
 import time
+import traceback
+
+import guerillabackup
+from guerillabackup.BackupElementMetainfo import BackupElementMetainfo
+from guerillabackup.TransformationProcessOutputStream import TransformationProcessOutputStream
 
 # This is the key to the list of source files to include using
 # a LogfileBackupUnit. The list is extracted from the configContext
@@ -56,7 +58,7 @@ class LogfileBackupUnitInputDescription():
     self.inputFileRegex = re.compile(descriptionTuple[1])
     self.sourceTransformationPattern = descriptionTuple[2]
     try:
-      if self.sourceTransformationPattern == None:
+      if self.sourceTransformationPattern is None:
         guerillabackup.assertSourceUrlSpecificationConforming(
             self.sourceUrlPath+'testname')
       elif self.sourceTransformationPattern[0] != '/':
@@ -66,14 +68,14 @@ class LogfileBackupUnitInputDescription():
         guerillabackup.assertSourceUrlSpecificationConforming(
             self.sourceTransformationPattern)
     except Exception as assertException:
-      raise Exception('Source URL transformation malformed: '+assertException[0])
+      raise Exception('Source URL transformation malformed: '+assertException.args[0])
 
     self.handlingPolicyName = descriptionTuple[3]
     self.encryptionKeyName = descriptionTuple[4]
 
   def getTransformedSourceName(self, matcher):
     """Get the source name for logfiles matching the input description."""
-    if self.sourceTransformationPattern == None:
+    if self.sourceTransformationPattern is None:
       return self.sourceUrlPath+matcher.group(1)
     if self.sourceTransformationPattern[0] != '/':
       return self.sourceUrlPath+self.sourceTransformationPattern
@@ -106,15 +108,15 @@ class LogfileSourceInfo():
     this group."""
     groupDict = matcher.groupdict()
     serialType = None
-    if groupDict.has_key('serial'):
+    if 'serial' in groupDict:
       serialType = 'serial'
-    if groupDict.has_key('oldserial'):
+    if 'oldserial' in groupDict:
       if serialType != None:
         self.serialTypesConsistentFlag = False
       else:
         serialType = 'oldserial'
 
-    if self.serialType == None:
+    if self.serialType is None:
       self.serialType = serialType
     elif self.serialType != serialType:
       self.serialTypesConsistentFlag = False
@@ -123,13 +125,13 @@ class LogfileSourceInfo():
     if serialType != None:
       serialValue = groupDict[serialType]
       if (serialValue != None) and (len(serialValue) != 0):
-        serialData = map(tryIntConvert, re.findall('(\\d+|\\D+)', serialValue))
+        serialData = [tryIntConvert(x) for x in re.findall('(\\d+|\\D+)', serialValue)]
 # This is not very efficient but try to detect duplicate serialData
 # values here already and tag the whole list as inconsistent.
 # This may happen with broken regular expressions or when mixing
 # compressed and uncompressed files with same serial.
-    for x, y, z in self.fileList:
-      if z == serialData:
+    for elemFileName, elemMatcher, elemSerialData in self.fileList:
+      if elemSerialData == serialData:
         self.serialTypesConsistentFlag = False
     self.fileList.append((fileName, matcher, serialData,))
 
@@ -140,7 +142,7 @@ class LogfileSourceInfo():
       raise Exception('No sorting in inconsistent state')
 
     fileList = sorted(self.fileList, key=lambda x: x[2])
-    if self.serialType == None:
+    if self.serialType is None:
       if len(fileList) > 1:
         raise Exception('No serial type and more than one file')
     elif self.serialType == 'serial':
@@ -194,7 +196,8 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     self.testModeFlag = configContext.get(
         guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY, False)
     if not isinstance(self.testModeFlag, bool):
-      raise Exception('Configuration parameter %s has to be boolean' % guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY)
+      raise Exception('Configuration parameter %s has to be ' \
+          'boolean' % guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY)
 
 # Timestamp of last invocation end.
     self.lastInvocationTime = -1
@@ -202,14 +205,14 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # The UUID is kept internally as binary data string. Only for
 # persistency, data will be base64 encoded.
     self.resourceUuidMap = {}
-    self.persistencyDirFd = guerillabackup.openPersistencyFile(configContext,
-        os.path.join('generators', self.unitName),
-        os.O_DIRECTORY|os.O_RDONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, 0700)
+    self.persistencyDirFd = guerillabackup.openPersistencyFile(
+        configContext, os.path.join('generators', self.unitName),
+        os.O_DIRECTORY|os.O_RDONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, 0o700)
 
     handle = None
     try:
-      handle = guerillabackup.secureOpenAt(self.persistencyDirFd,
-          'state.current',
+      handle = guerillabackup.secureOpenAt(
+          self.persistencyDirFd, 'state.current',
           fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
     except OSError as openError:
       if openError.errno != errno.ENOENT:
@@ -217,8 +220,8 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # See if the state.previous file exists, if yes, the unit is likely
 # to be broken. Refuse to do anything while in this state.
     try:
-      statResult = guerillabackup.guerillaOsFstatatFunction(
-          self.persistencyDirFd, 'state.previous', 0)
+      os.stat(
+          'state.previous', dir_fd=self.persistencyDirFd, follow_symlinks=False)
       raise Exception('Persistency data inconsistencies: found stale previous state file')
     except OSError as statError:
       if statError.errno != errno.ENOENT:
@@ -226,21 +229,21 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # So there is only the current state file, if any.
     stateInfo = None
     if handle != None:
-      stateData = ''
+      stateData = b''
       while True:
         data = os.read(handle, 1<<20)
         if len(data) == 0:
           break
         stateData += data
       os.close(handle)
-      stateInfo = json.loads(stateData)
+      stateInfo = json.loads(str(stateData, 'ascii'))
       if ((not isinstance(stateInfo, list)) or (len(stateInfo) != 2) or
           (not isinstance(stateInfo[0], int)) or
           (not isinstance(stateInfo[1], dict))):
         raise Exception('Persistency data structure mismatch')
       self.lastInvocationTime = stateInfo[0]
       self.resourceUuidMap = stateInfo[1]
-      for url, uuidData in self.resourceUuidMap.iteritems():
+      for url, uuidData in self.resourceUuidMap.items():
         self.resourceUuidMap[url] = base64.b64decode(uuidData)
 
   def getNextInvocationTime(self):
@@ -285,53 +288,59 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     if os.geteuid() != 0:
       getFileOpenerInformationErrorMode = guerillabackup.OPENER_INFO_IGNORE_ACCESS_ERRORS
     try:
-      inputDirectoryFd = guerillabackup.secureOpenAt(None,
-          unitInput.inputDirectoryName,
+      inputDirectoryFd = guerillabackup.secureOpenAt(
+          None, unitInput.inputDirectoryName,
           fileOpenFlags=os.O_DIRECTORY|os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
 
       sourceDict = {}
       for fileName in guerillabackup.listDirAt(inputDirectoryFd):
         matcher = unitInput.inputFileRegex.match(fileName)
-        if matcher == None:
+        if matcher is None:
           continue
         sourceUrl = unitInput.getTransformedSourceName(matcher)
         sourceInfo = sourceDict.get(sourceUrl, None)
-        if sourceInfo == None:
+        if sourceInfo is None:
           sourceInfo = LogfileSourceInfo(sourceUrl)
           sourceDict[sourceUrl] = sourceInfo
         sourceInfo.addFile(fileName, matcher)
 
 # Now we know all files to be included for each URL. Sort them
 # to fulfill Req:OrderedProcessing and start with the oldest.
-      for sourceUrl, sourceInfo in sourceDict.iteritems():
+      for sourceUrl, sourceInfo in sourceDict.items():
         if not sourceInfo.serialTypesConsistentFlag:
-          print >>sys.stderr, 'Inconsistent serial types in %s, ignoring source.' % sourceInfo.sourceUrl
+          print('Inconsistent serial types in %s, ignoring ' \
+              'source.' % sourceInfo.sourceUrl, file=sys.stderr)
           continue
 
 # Get the downstream transformation pipeline elements.
-        downstreamPipelineElements = guerillabackup.getDefaultDownstreamPipeline(self.configContext, unitInput.encryptionKeyName)
+        downstreamPipelineElements = \
+            guerillabackup.getDefaultDownstreamPipeline(
+                self.configContext, unitInput.encryptionKeyName)
         fileList = sourceInfo.getSortedFileList()
         fileInfoList = guerillabackup.getFileOpenerInformation(
-            map(lambda x: '%s/%s' % (unitInput.inputDirectoryName, x[0]), fileList),
+            ['%s/%s' % (unitInput.inputDirectoryName, x[0]) for x in fileList],
             getFileOpenerInformationErrorMode)
         for fileListIndex in range(0, len(fileList)):
           fileName, matcher, serialData = fileList[fileListIndex]
 # Make sure, that the file is not written any more.
-          logFilePathName = os.path.join(unitInput.inputDirectoryName,
-              fileName)
+          logFilePathName = os.path.join(
+              unitInput.inputDirectoryName, fileName)
 # Build the transformation pipeline instance.
-          fileHandle = guerillabackup.secureOpenAt(inputDirectoryFd,
-              fileName, fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
-
+          fileHandle = guerillabackup.secureOpenAt(
+              inputDirectoryFd, fileName,
+              fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
           isOpenForWritingFlag = False
           if fileInfoList[fileListIndex] != None:
             for pid, fdInfoList in fileInfoList[fileListIndex]:
               for fdNum, fdOpenFlags in fdInfoList:
-                if fdOpenFlags == 0100001:
-                  print >>sys.stderr, 'File %s is still written by pid %d, fd %d' % (logFilePathName, pid, fdNum)
+                if fdOpenFlags == 0o100001:
+                  print('File %s is still written by pid %d, ' \
+                      'fd %d' % (logFilePathName, pid, fdNum), file=sys.stderr)
                   isOpenForWritingFlag = True
-                elif fdOpenFlags != 0100000:
-                  print >>sys.stderr, 'File %s unknown open flags 0x%x by pid %d, fd %d' % (logFilePathName, fdOpenFlags, pid, fdNum)
+                elif fdOpenFlags != 0o100000:
+                  print('File %s unknown open flags 0x%x by pid %d, ' \
+                      'fd %d' % (
+                          logFilePathName, fdOpenFlags, pid, fdNum), file=sys.stderr)
                   isOpenForWritingFlag = True
 # Files have to be processed in correct order, so we have to stop
 # here.
@@ -347,11 +356,12 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
               compressionElement = guerillabackup.OSProcessPipelineElement(
                   '/bin/gzip', ['/bin/gzip', '-cd'])
             else:
-              raise Exception('Unkown compression type %s for file %s/%s' %
-                  (compressionType, unitInput.inputDirectoryName, fileName))
+              raise Exception('Unkown compression type %s for file %s/%s' % (
+                  compressionType, unitInput.inputDirectoryName, fileName))
             completePipleline = [compressionElement]+completePipleline[:]
 
-          logFileFd = guerillabackup.secureOpenAt(inputDirectoryFd, fileName,
+          logFileFd = guerillabackup.secureOpenAt(
+              inputDirectoryFd, fileName,
               fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
           logFileStatData = os.fstat(logFileFd)
           logFileOutput = TransformationProcessOutputStream(logFileFd)
@@ -382,7 +392,8 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # Also include the timestamp and original filename of the source
 # file in the UUID calculation: Otherwise retransmissions of files
 # with identical content cannot be distinguished.
-          currentUuidDigest.update(b'%d %s' % (logFileStatData.st_mtime, fileName))
+          currentUuidDigest.update(bytes('%d %s' % (
+              logFileStatData.st_mtime, fileName), sys.getdefaultencoding()))
           currentUuid = currentUuidDigest.digest()
           metaInfoDict['DataUuid'] = currentUuid
           metaInfoDict['StorageFileChecksumSha512'] = digestData
@@ -394,12 +405,12 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
           if self.testModeFlag:
             raise Exception('No completion of logfile backup in test mode')
 # Delete the logfile.
-          guerillabackup.internalUnlinkAt(inputDirectoryFd, fileName, 0)
+          os.unlink(fileName, dir_fd=inputDirectoryFd)
 
 # Update the UUID map as last step: if any of the steps above
 # would fail, currentUuid generated in next run will be identical
 # to this. Sorting out the duplicates will be easy.
-          self.resourceUuidMap[sourceInfo.sourceUrl]=currentUuid
+          self.resourceUuidMap[sourceInfo.sourceUrl] = currentUuid
     finally:
       if inputDirectoryFd != None:
         os.close(inputDirectoryFd)
@@ -425,15 +436,20 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
         invocationAttemptedFlag = True
         nextInvocationDelta = None
 
-        if unitInputListConfig == None:
-          print >>sys.stderr, 'Suspected configuration error: LogfileBackupUnit enabled but %s configuration list empty' % CONFIG_INPUT_LIST_KEY
+        if unitInputListConfig is None:
+          print('Suspected configuration error: LogfileBackupUnit ' \
+              'enabled but %s configuration list empty' % CONFIG_INPUT_LIST_KEY,
+                file=sys.stderr)
         else:
           for configItem in unitInputListConfig:
             unitInput = None
             try:
               unitInput = LogfileBackupUnitInputDescription(configItem)
             except Exception as configReadException:
-              print >>sys.stderr, 'LogfileBackupUnit: failed to use configuration %s: %s' % (repr(configItem), configReadException[0])
+              print('LogfileBackupUnit: failed to use configuration ' \
+                  '%s: %s' % (
+                      repr(configItem), configReadException.args[0]),
+                    file=sys.stderr)
               continue
 # Configuration parsing worked, start processing the inputs.
             self.processInput(unitInput, sink)
@@ -446,35 +462,44 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # to avoid data loss when program crashes immediately afterwards.
 # Keep one old version of state file.
           try:
-            guerillabackup.internalUnlinkAt(self.persistencyDirFd,
-                'state.old', 0)
+            os.unlink('state.old', dir_fd=self.persistencyDirFd)
           except OSError as relinkError:
             if relinkError.errno != errno.ENOENT:
               raise
           try:
-            guerillabackup.internalLinkAt(self.persistencyDirFd,
-                'state.current', self.persistencyDirFd, 'state.old', 0)
+            os.link(
+                'state.current', 'state.old', src_dir_fd=self.persistencyDirFd,
+                dst_dir_fd=self.persistencyDirFd, follow_symlinks=False)
           except OSError as relinkError:
             if relinkError.errno != errno.ENOENT:
               raise
           try:
-            guerillabackup.internalUnlinkAt(self.persistencyDirFd,
-                'state.current', 0)
+            os.unlink('state.current', dir_fd=self.persistencyDirFd)
           except OSError as relinkError:
             if relinkError.errno != errno.ENOENT:
               raise
-          handle = guerillabackup.secureOpenAt(self.persistencyDirFd,
-              'state.current', fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, fileCreateMode=0600)
+          handle = guerillabackup.secureOpenAt(
+              self.persistencyDirFd, 'state.current',
+              fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY,
+              fileCreateMode=0o600)
           writeResourceUuidMap = {}
-          for url, uuidData in self.resourceUuidMap.iteritems():
-            writeResourceUuidMap[url] = base64.b64encode(uuidData)
-          os.write(handle, json.dumps([self.lastInvocationTime, writeResourceUuidMap]))
+          for url, uuidData in self.resourceUuidMap.items():
+            writeResourceUuidMap[url] = str(base64.b64encode(uuidData), 'ascii')
+          os.write(
+              handle,
+              json.dumps([
+                  self.lastInvocationTime,
+                  writeResourceUuidMap]).encode('ascii'))
           os.close(handle)
         except Exception as stateSaveException:
 # Writing of state information failed. Print out the state information
 # for manual reconstruction as last resort.
-          exceptionInfo = sys.exc_info()
-          print >>sys.stderr, 'Writing of state information failed: %s\nCurrent state: %s' % (str(stateSaveException), repr([self.lastInvocationTime, self.resourceUuidMap]))
+          print('Writing of state information failed: %s\nCurrent ' \
+              'state: %s' % (
+                  str(stateSaveException),
+                  repr([self.lastInvocationTime, self.resourceUuidMap])),
+                file=sys.stderr)
+          traceback.print_tb(sys.exc_info()[2])
           raise
 
 

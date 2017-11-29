@@ -3,6 +3,11 @@
 # also use other guerillabackup core units as basis for your new
 # code, e.g. /usr/lib/guerillabackup/lib/guerillabackup/LogfileBackupUnit.py
 
+"""Your module docstring here ..."""
+
+import errno
+import json
+import os
 
 import guerillabackup
 
@@ -26,12 +31,13 @@ class SomeBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     self.testModeFlag = configContext.get(
         guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY, False)
     if not isinstance(self.testModeFlag, bool):
-      raise Exception('Configuration parameter %s has to be boolean' % guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY)
+      raise Exception('Configuration parameter %s has to be ' \
+          'boolean' % guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY)
 
 # Open a persistency directory.
-    self.persistencyDirFd = guerillabackup.openPersistencyFile(configContext,
-        os.path.join('generators', self.unitName),
-        os.O_DIRECTORY|os.O_RDONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, 0600)
+    self.persistencyDirFd = guerillabackup.openPersistencyFile(
+        configContext, os.path.join('generators', self.unitName),
+        os.O_DIRECTORY|os.O_RDONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY, 0o600)
 
     handle = None
     try:
@@ -42,14 +48,14 @@ class SomeBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
       if openError.errno != errno.ENOENT:
         raise
     if handle != None:
-      stateData = ''
+      stateData = b''
       while True:
         data = os.read(handle, 1<<20)
         if len(data) == 0:
           break
         stateData += data
       os.close(handle)
-      stateInfo = json.loads(stateData)
+      stateInfo = json.loads(str(stateData, 'ascii'))
       if ((not isinstance(stateInfo, list)) or (len(stateInfo) != 2) or
           (not isinstance(stateInfo[0], int)) or
           (not isinstance(stateInfo[1], dict))):
@@ -64,8 +70,8 @@ class SomeBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     be queried again soon.
     @return 0 if the unit should be invoked immediately, the seconds
     to go otherwise."""
-    currentTime = int(time.time())
 # Calculate the next invocation time.
+    maxIntervalDelta = 600.0
     ...
     return maxIntervalDelta
 

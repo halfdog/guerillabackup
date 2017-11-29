@@ -43,7 +43,8 @@ TarBackupUnitConfigList = {}
 # TarBackupUnitConfigList['/root'] = {
 #   'PreBackupCommand': ['/usr/bin/touch', '/tmp/prebackup'],
 #   'PostBackupCommand': ['/usr/bin/touch', '/tmp/postbackup'],
-#   'Root': '/', 'Include': '.',
+#   'Root': '/',
+#   'Include': ['.'],
 #   'Exclude': ['./proc', './sys', './var/lib/guerillabackup/data'],
 #   'IgnoreBackupRaces': False,
 # Schedule one root directory full backup every week.

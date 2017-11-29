@@ -1,18 +1,20 @@
-#!/usr/bin/python2.7 -BEsStt
-# This test collection attempts to verify that the DefaultFileSystemSink
-# class works as expected.
+#!/usr/bin/python3 -BEsStt
+"""This test collection attempts to verify that the DefaultFileSystemSink
+class works as expected."""
 
 import sys
 sys.path = sys.path[1:] + ['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib-enabled']
 
-import guerillabackup
 import hashlib
 import os
 import time
 
+import guerillabackup
+from guerillabackup.BackupElementMetainfo import BackupElementMetainfo
+
 testDirName = '/tmp/gb-test-%s' % time.time()
-print >>sys.stderr, 'Using %s for testing' % testDirName
-os.mkdir(testDirName, 0700)
+print('Using %s for testing' % testDirName, file=sys.stderr)
+os.mkdir(testDirName, 0o700)
 
 baseDirFd = os.open(testDirName, os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
 
@@ -22,28 +24,28 @@ try:
   sinkHandle = sink.getSinkHandle('somepath/invalid')
   raise Exception('Illegal state')
 except Exception as testException:
-  if not testException.message == 'Slashes not conforming':
+  if testException.args[0] != 'Slashes not conforming':
     raise testException
 
 try:
   sinkHandle = sink.getSinkHandle('/somepath/invalid/')
   raise Exception('Illegal state')
 except Exception as testException:
-  if not testException.message == 'Slashes not conforming':
+  if testException.args[0] != 'Slashes not conforming':
     raise testException
 
 try:
   sinkHandle = sink.getSinkHandle('/somepath/../invalid')
   raise Exception('Illegal state')
 except Exception as testException:
-  if not testException.message == '. and .. forbidden':
+  if testException.args[0] != '. and .. forbidden':
     raise testException
 
 try:
   sinkHandle = sink.getSinkHandle('/somepath/./invalid')
   raise Exception('Illegal state')
 except Exception as testException:
-  if not testException.message == '. and .. forbidden':
+  if testException.args[0] != '. and .. forbidden':
     raise testException
 
 sinkHandle = sink.getSinkHandle('/somepath/valid')
@@ -57,7 +59,8 @@ digestAlgo = hashlib.sha512()
 os.write(sinkStream, sinkTestData)
 digestAlgo.update(sinkTestData)
 
-metaInfo = {'BackupType': 'full',
+metaInfo = {
+    'BackupType': 'full',
     'StorageFileChecksumSha512': digestAlgo.hexdigest(),
     'Timestamp': 1234567890}
 sinkHandle.close(metaInfo)

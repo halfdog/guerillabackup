@@ -5,7 +5,6 @@ and a lock file to allow race-free operation when multiple processes
 use the same storage directory."""
 
 import errno
-import json
 import os
 import stat
 
@@ -42,19 +41,21 @@ class DefaultFileStorage(
 # At first get an iterator over all elements in file system that
 # might match the given query.
     guerillabackup.assertSourceUrlSpecificationConforming(sourceUrl)
-    elementIdParts = guerillabackup.DefaultFileSystemSink.internalGetElementIdParts(sourceUrl, metaData)
+    elementIdParts = \
+        guerillabackup.DefaultFileSystemSink.internalGetElementIdParts(
+            sourceUrl, metaData)
 # Now search the directory for all files conforming to the specifiction.
 # As there may exist multiple files with the same time stamp and
 # type, load also the meta data and check if matches the query.
     elementDirFd = None
-    if elementIdParts[0] == None:
+    if len(elementIdParts[0]) == 0:
       elementDirFd = os.dup(self.storageDirFd)
     else:
       try:
         elementDirFd = guerillabackup.secureOpenAt(
             self.storageDirFd, elementIdParts[0][1:], symlinksAllowedFlag=False,
             dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
-            dirCreateMode=0700,
+            dirCreateMode=0o700,
             fileOpenFlags=os.O_DIRECTORY|os.O_RDONLY|os.O_NOFOLLOW|os.O_CREAT|os.O_EXCL|os.O_NOCTTY)
       except OSError as dirOpenError:
 # Directory does not exist, so there cannot be any valid element.
@@ -80,13 +81,13 @@ class DefaultFileStorage(
         metaDataFd = -1
         fileMetaInfo = None
         try:
-          fd = guerillabackup.secureOpenAt(
+          metaDataFd = guerillabackup.secureOpenAt(
               elementDirFd, './%s.info' % fileName[:-5],
               symlinksAllowedFlag=False,
               dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
               dirCreateMode=None,
               fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
-          metaInfoData = guerillabackup.readFully(fd)
+          metaInfoData = guerillabackup.readFully(metaDataFd)
           fileMetaInfo = BackupElementMetainfo.unserialize(metaInfoData)
         finally:
           if metaDataFd >= 0:
@@ -133,16 +134,8 @@ class FileStorageBackupDataElement(
 # Now try to create the StorageBackupDataElementInterface element.
     self.storageDirFd = storageDirFd
 # Just stat the data and info file, that are mandatory.
-    statData = guerillabackup.internalFstatAt(
-        self.storageDirFd, '.'+elementId+'.data',
-        guerillabackup.AT_SYMLINK_NOFOLLOW)
-    if statData == None:
-      raise Exception()
-    statData = guerillabackup.internalFstatAt(
-        self.storageDirFd, '.'+elementId+'.info',
-        guerillabackup.AT_SYMLINK_NOFOLLOW)
-    if statData == None:
-      raise Exception()
+    os.stat('.'+elementId+'.data', dir_fd=self.storageDirFd)
+    os.stat('.'+elementId+'.info', dir_fd=self.storageDirFd)
     self.elementId = elementId
 # Cache the metainfo once loaded.
     self.metaInfo = None
@@ -156,35 +149,26 @@ class FileStorageBackupDataElement(
     return self.sourceUrl
 
   def getMetaData(self):
-    """Get only the metadata part of this element"""
+    """Get only the metadata part of this element.
+    @return a BackupElementMetainfo object"""
     if self.metaInfo != None:
       return self.metaInfo
     metaInfoData = b''
-    fd = -1
+    metaDataFd = -1
     try:
-      fd = guerillabackup.secureOpenAt(
-          self.storageDirFd, '.'+self.elementId+'.info',
-          symlinksAllowedFlag=False,
-          dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
-          dirCreateMode=None,
-          fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
-      metaInfoData = guerillabackup.readFully(fd)
+      metaDataFd = self.openElementFile('info')
+      metaInfoData = guerillabackup.readFully(metaDataFd)
       self.metaInfo = BackupElementMetainfo.unserialize(metaInfoData)
     finally:
-      if fd >= 0:
-        os.close(fd)
+      if metaDataFd >= 0:
+        os.close(metaDataFd)
     return self.metaInfo
 
   def getDataStream(self):
     """Get a stream to read data from that element.
     @return a file descriptor for reading this stream."""
-    fd = guerillabackup.secureOpenAt(
-        self.storageDirFd, '.'+self.elementId+'.data',
-        symlinksAllowedFlag=False,
-        dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
-        dirCreateMode=None,
-        fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
-    return fd
+    dataFd = self.openElementFile('data')
+    return dataFd
 
   def assertExtraDataName(self, name):
     """Make sure that file extension is a known one."""
@@ -200,40 +184,60 @@ class FileStorageBackupDataElement(
     element."""
     self.assertExtraDataName(name)
     valueFileName = '.'+self.elementId+'.'+name
-    if value == None:
+    if value is None:
       try:
-        guerillabackup.internalUnlinkAt(self.storageDirFd, valueFileName, 0)
+        os.unlink(valueFileName, dir_fd=self.storageDirFd)
       except OSError as unlinkError:
-        raise
+        if unlinkError.errno != errno.ENOENT:
+          raise
       return
-    fd = guerillabackup.secureOpenAt(
-        self.storageDirFd, valueFileName, symlinksAllowedFlag=False,
+# . and - are forbidden in name, so such a temporary file should
+# be colissionfree.
+    temporaryExtraDataFileName = '.%s.%s-%d' % (
+        self.elementId, name, os.getpid())
+    extraDataFd = backup.secureOpenAt(
+        self.storageDirFd, temporaryExtraDataFileName,
+        symlinksAllowedFlag=False,
         dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
         dirCreateMode=None,
-        fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW|os.O_NOCTTY)
+        fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_TRUNC|os.O_NOFOLLOW|os.O_NOCTTY)
     try:
-      os.write(fd, value)
+      os.write(extraDataFd, value)
+      os.close(extraDataFd)
+      extraDataFd = -1
+      extraDataFileName = '.%s.%s' % (self.elementId, name)
+      try:
+        os.unlink(extraDataFileName, dir_fd=self.storageDirFd)
+      except OSError as unlinkError:
+        if unlinkError.errno != errno.ENOENT:
+          raise
+      os.link(
+          temporaryExtraDataFileName, extraDataFileName,
+          src_dir_fd=self.storageDirFd, dst_dir_fd=self.storageDirFd,
+          follow_symlinks=False)
+# Do not let "finally" do the cleanup to on late failures to avoid
+# deletion of both versions.
+      os.unlink(temporaryExtraDataFileName, dir_fd=self.storageDirFd)
     finally:
-      os.close(fd)
+      if extraDataFd >= 0:
+        os.close(extraDataFd)
+        os.unlink(temporaryExtraDataFileName, dir_fd=self.storageDirFd)
+
 
   def getExtraData(self, name):
     """@return None when no extra data was found, the content
     otherwise"""
     self.assertExtraDataName(name)
-    valueFileName = '.'+self.elementId+'.'+name
-    fd = guerillabackup.secureOpenAt(
-        self.storageDirFd, valueFileName, symlinksAllowedFlag=False,
-        dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
-        dirCreateMode=None,
-        fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
     value = None
+    extraDataFd = -1
     try:
-      value = guerillabackup.readFully(fd)
-      os.write(fd, value)
+      extraDataFd = self.openElementFile(name)
+      value = guerillabackup.readFully(extraDataFd)
     except OSError as readError:
-      raise
+      if readError.errno != errno.ENOENT:
+        raise
     finally:
-      os.close(fd)
+      os.close(extraDataFd)
     return value
 
   def delete(self):
@@ -251,7 +255,7 @@ class FileStorageBackupDataElement(
       fileNamePrefix = self.elementId[lastFileSepPos+1:]
       for fileName in guerillabackup.listDirAt(dirFd):
         if fileName.startswith(fileNamePrefix):
-          guerillabackup.internalUnlinkAt(dirFd, fileName, 0)
+          os.unlink(fileName, dir_fd=dirFd)
     finally:
       os.close(dirFd)
 
@@ -259,18 +263,29 @@ class FileStorageBackupDataElement(
     """Lock this backup data element.
     @throws Exception if the element does not exist any more or
     cannot be locked"""
-    fd = guerillabackup.secureOpenAt(
-        self.storageDirFd, '.'+self.elementId+'.lock',
-        symlinksAllowedFlag=False,
-        dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
-        dirCreateMode=None,
+    lockFd = self.openElementFile(
+        'lock',
         fileOpenFlags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NOCTTY)
-    os.close(fd)
+    os.close(lockFd)
 
   def unlock(self):
     """Unlock this backup data element."""
-    guerillabackup.internalUnlinkAt(
-        self.storageDirFd, '.'+self.elementId+'.lock', 0)
+    os.unlink('.'+self.elementId+'.lock', dir_fd=self.storageDirFd)
+
+  def openElementFile(self, name, fileOpenFlags=None):
+    """Open the element file with given name.
+    @param fileOpenFlags when None, open the file readonly without
+    creating it.
+    @return the file descriptor to the new file."""
+    if fileOpenFlags is None:
+      fileOpenFlags = os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY
+    valueFileName = '.'+self.elementId+'.'+name
+    elementFd = guerillabackup.secureOpenAt(
+        self.storageDirFd, valueFileName, symlinksAllowedFlag=False,
+        dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
+        dirCreateMode=None,
+        fileOpenFlags=fileOpenFlags)
+    return elementFd
 
 
 class FileBackupDataElementQueryResult(guerillabackup.BackupDataElementQueryResult):
@@ -299,8 +314,7 @@ class FileBackupDataElementQueryResult(guerillabackup.BackupDataElementQueryResu
       if lastDirStackElement[0] == '.':
         testPath = testName
 # Stat without following links.
-      statData = guerillabackup.internalFstatAt(
-          self.storageDirFd, testPath, guerillabackup.AT_SYMLINK_NOFOLLOW)
+      statData = os.stat(testPath, dir_fd=self.storageDirFd)
       if stat.S_ISDIR(statData.st_mode):
 # Add an additional level of to the stack.
         fileList = guerillabackup.listDirAt(self.storageDirFd, testPath)
@@ -308,7 +322,8 @@ class FileBackupDataElementQueryResult(guerillabackup.BackupDataElementQueryResu
           self.dirStack.append((testPath, fileList))
         continue
       if not stat.S_ISREG(statData.st_mode):
-        raise Exception('Found unexpected storage data elements with stat data 0x%x' % statData.st_mode)
+        raise Exception('Found unexpected storage data elements ' \
+            'with stat data 0x%x' % statData.st_mode)
 # So this is a normal file. Find the common prefix and remove
 # all other files belonging to the same element from the list.
       testNamePrefixPos = testName.rfind('.')

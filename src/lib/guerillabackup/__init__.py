@@ -1,9 +1,10 @@
 """This is the main guerillabackup module containing interfaces,
 common helper functions."""
 
+import errno
 import os
-import posix
 import select
+import sys
 import time
 
 CONFIG_GENERAL_PERSISTENCY_BASE_DIR_KEY = 'GeneralPersistencyBaseDir'
@@ -278,7 +279,8 @@ class StorageBackupDataElementInterface:
     raise Exception('Interface method called')
 
   def getMetaData(self):
-    """Get only the metadata part of this element"""
+    """Get only the metadata part of this element.
+    @return a BackupElementMetainfo object"""
     raise Exception('Interface method called')
 
   def getDataStream(self):
@@ -343,7 +345,7 @@ def assertSourceUrlSpecificationConforming(sourceUrl):
     if (urlPart == '.') or (urlPart == '..'):
       raise Exception('. and .. forbidden')
     for urlChar in urlPart:
-      if not urlChar in '%-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz':
+      if urlChar not in '%-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz':
         raise Exception('Invalid character %s in URL part' % repr(urlChar))
 
 
@@ -390,9 +392,11 @@ def instantiateTransformationPipeline(
   element at first position creating the backup data internally.
   @param downstreamProcessOutputStream if None, enable this stream
   as output of the last pipeline element."""
-  if (upstreamProcessOutput != None) and (not isinstance(upstreamProcessOutput, TransformationProcessOutputInterface)):
+  if ((upstreamProcessOutput != None) and
+      (not isinstance(
+          upstreamProcessOutput, TransformationProcessOutputInterface))):
     raise Exception('upstreamProcessOutput not an instance of TransformationProcessOutputInterface')
-  if doStartFlag and (downstreamProcessOutputStream == None):
+  if doStartFlag and (downstreamProcessOutputStream is None):
     raise Exception('Cannot autostart instances without downstream')
   instanceList = []
   lastInstance = None
@@ -479,113 +483,6 @@ def runTransformationPipeline(pipelineInstances):
       time.sleep(1)
 
 
-def createOsError(errno, message):
-  """Raise an OSError with given number and message."""
-  raise OSError(errno, '%s: %s' % (os.strerror(errno), message))
-
-guerillaOsFstatatFunction = None
-guerillaOsLinkatFunction = None
-guerillaOsMkdiratFunction = None
-guerillaOsOpenatFunction = None
-guerillaOsUnlinkFunction = None
-# This structure is only needed when functions from libc are used.
-guerillaOsStatStruct = None
-guerillaOsStatStructVersion = None
-if os.__dict__.has_key('openat'):
-  guerillaOsFstatatFunction = os.fstatat
-  guerillaOsLinkatFunction = os.linkat
-  guerillaOsMkdiratFunction = os.mkdirat
-  guerillaOsOpenatFunction = os.openat
-  guerillaOsUnlinkFunction = os.unlinkat
-else:
-  import ctypes
-  import errno
-  import struct
-
-  if ctypes.sizeof(ctypes.c_void_p) == 4:
-    class StructStat(ctypes.Structure):
-      """Define the data structure for 32bit stat calls."""
-      _fields_ = [("st_dev", ctypes.c_longlong), ("__pad0", ctypes.c_int), ("__st_ino", ctypes.c_long), ("st_mode", ctypes.c_int), ("st_nlink", ctypes.c_int), ("st_uid", ctypes.c_long), ("st_gid", ctypes.c_long), ("st_rdev", ctypes.c_longlong), ("__pad3", ctypes.c_int), ("st_size", ctypes.c_longlong), ("st_blksize", ctypes.c_long), ("st_blocks", ctypes.c_longlong), ("st_atime", ctypes.c_long), ("st_atime_nsec", ctypes.c_long), ("st_mtime", ctypes.c_long), ("st_mtime_nsec", ctypes.c_int), ("st_ctime", ctypes.c_long), ("st_ctime_nsec", ctypes.c_long), ("st_ino", ctypes.c_longlong), ("fill", ctypes.c_int*1000)]
-    guerillaOsStatStruct = StructStat
-    guerillaOsStatStructVersion = 3
-  else:
-    class StructStat(ctypes.Structure):
-      """Define the data structure for 64bit stat calls."""
-      _fields_ = [("st_dev", ctypes.c_int), ("st_ino", ctypes.c_long), ("st_nlink", ctypes.c_long), ("st_mode", ctypes.c_int), ("st_uid", ctypes.c_int), ("st_gid", ctypes.c_int), ("__pad1", ctypes.c_long), ("st_rdev", ctypes.c_long), ("st_size", ctypes.c_long), ("st_blksize", ctypes.c_int), ("__pad2", ctypes.c_int), ("st_blocks", ctypes.c_long), ("st_atime", ctypes.c_long), ("st_atime_nsec", ctypes.c_long), ("st_mtime", ctypes.c_int), ("st_mtime_nsec", ctypes.c_long), ("st_ctime", ctypes.c_int), ("st_ctime_nsec", ctypes.c_long), ("fill", ctypes.c_int*1000)]
-    guerillaOsStatStruct = StructStat
-    guerillaOsStatStructVersion = 1
-
-  libcHandle = ctypes.CDLL('libc.so.6', use_errno=True)
-# Bind fstatat
-  localFxstat64 = libcHandle.__fxstatat64
-  localFxstat64.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_int)
-  localFxstat64.restype = ctypes.c_int
-  def localFstatat(dirFd, pathName, flags):
-    """This function wraps the localFxstat64 function to return
-    same data type as Python os.fstat() when not available."""
-    statBuf = guerillaOsStatStruct()
-# Version seems to be 3 for i386 (Ubuntu trusty) and 1 for amd64 (Trusty)
-    result = localFxstat64(
-        guerillaOsStatStructVersion, int(dirFd), pathName,
-        ctypes.byref(statBuf), int(flags))
-    if result != 0:
-      createOsError(ctypes.get_errno(), '"%s"' % pathName)
-    return posix.stat_result((statBuf.st_mode, statBuf.st_ino, statBuf.st_dev, statBuf.st_nlink, statBuf.st_uid, statBuf.st_gid, statBuf.st_size, statBuf.st_atime, statBuf.st_mtime, statBuf.st_ctime))
-  guerillaOsFstatatFunction = localFstatat
-
-
-# Bind linkat
-  guerillaOsLinkatFunction = libcHandle.linkat
-  guerillaOsLinkatFunction.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
-  guerillaOsLinkatFunction.restype = ctypes.c_int
-# Bind mkdirat
-  guerillaOsMkdiratFunction = libcHandle.mkdirat
-  guerillaOsMkdiratFunction.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
-  guerillaOsMkdiratFunction.restype = ctypes.c_int
-# Bind openat
-  guerillaOsOpenatFunction = libcHandle.openat
-  guerillaOsOpenatFunction.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
-  guerillaOsOpenatFunction.restype = ctypes.c_int
-# Bind unlinkat
-  guerillaOsUnlinkatFunction = libcHandle.unlinkat
-  guerillaOsUnlinkatFunction.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
-  guerillaOsUnlinkatFunction.restype = ctypes.c_int
-
-
-def internalFstatAt(dirFd, pathName, flags):
-  return guerillaOsFstatatFunction(dirFd, pathName, flags)
-
-def internalLinkAt(oldDirFd, oldPathName, newDirFd, newPathName, flags):
-  """This is the internal function to provide linkat features
-  while not available via os.linkat."""
-  result = guerillaOsLinkatFunction(
-      oldDirFd, oldPathName, newDirFd, newPathName, flags)
-  if result != 0:
-    createOsError(ctypes.get_errno(), '"%s"' % oldPathName)
-
-def internalMkdirAt(dirFd, pathName, createMode):
-  """This is the internal function to provide mkdirat features
-  while not available via os.mkdirat."""
-  result = guerillaOsMkdiratFunction(dirFd, pathName, createMode)
-  if result != 0:
-    createOsError(ctypes.get_errno(), '"%s"' % pathName)
-
-def internalOpenAt(dirFd, pathName, openFlags, createMode):
-  """This is the internal function to provide openat features
-  while not available via os.openat."""
-  result = guerillaOsOpenatFunction(dirFd, pathName, openFlags, createMode)
-  if result < 0:
-    createOsError(ctypes.get_errno(), 'openat failed for %s' % repr(pathName))
-  return result
-
-def internalUnlinkAt(dirFd, pathName, flags):
-  """This is the internal function to provide unlinkat features
-  while not available via os.unlinkat."""
-  result = guerillaOsUnlinkatFunction(dirFd, pathName, flags)
-  if result != 0:
-    createOsError(ctypes.get_errno(), '"%s"' % pathName)
-
-
 def listDirAt(dirFd, path='.'):
   """This function provides the os.listdir() functionality to
   list files in an opened directory for python2.x. With Python
@@ -632,17 +529,17 @@ def secureOpenAt(
   if not symlinksAllowedFlag:
     dirOpenFlags |= os.O_NOFOLLOW
     fileOpenFlags |= os.O_NOFOLLOW
-  if fileCreateMode == None:
+  if fileCreateMode is None:
     fileCreateMode = 0
 
   if pathName == '/':
     return os.open(pathName, os.O_RDONLY|os.O_DIRECTORY|os.O_NOCTTY)
 
-  if pathName[-1] == '/':
+  if pathName.endswith('/'):
     raise Exception('Invalid path value')
 
   currentDirFd = dirFd
-  if pathName[0] == '/':
+  if pathName.startswith('/'):
     currentDirFd = os.open(
         '/', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY)
     pathName = pathName[1:]
@@ -653,14 +550,14 @@ def secureOpenAt(
 # to avoid following symlinks.
     for pathNamePart in pathNameParts[:-1]:
       try:
-        nextDirFd = internalOpenAt(currentDirFd, pathNamePart, dirOpenFlags, 0)
+        nextDirFd = os.open(pathNamePart, dirOpenFlags, dir_fd=currentDirFd)
       except OSError as openError:
         if openError.errno == errno.EACCES:
           raise
-        if dirCreateMode == None:
+        if dirCreateMode is None:
           raise
-        internalMkdirAt(currentDirFd, pathNamePart, dirCreateMode)
-        nextDirFd = internalOpenAt(currentDirFd, pathNamePart, dirOpenFlags, 0)
+        os.mkdir(pathNamePart, mode=dirCreateMode, dir_fd=currentDirFd)
+        nextDirFd = os.open(pathNamePart, dirOpenFlags, dir_fd=currentDirFd)
       if currentDirFd != dirFd:
         os.close(currentDirFd)
       currentDirFd = nextDirFd
@@ -676,14 +573,15 @@ def secureOpenAt(
       fileOpenFlags &= ~os.O_CREAT
     resultFd = None
     try:
-      resultFd = internalOpenAt(
-          currentDirFd, pathNameParts[-1], fileOpenFlags, fileCreateMode)
+      resultFd = os.open(
+          pathNameParts[-1], fileOpenFlags, mode=fileCreateMode,
+          dir_fd=currentDirFd)
     except OSError as openError:
       if (not directoryCreateFlag) or (openError.errno != errno.ENOENT):
         raise
-      internalMkdirAt(currentDirFd, pathNameParts[-1], dirCreateMode)
-      resultFd = internalOpenAt(
-          currentDirFd, pathNameParts[-1], fileOpenFlags, 0)
+      os.mkdir(pathNameParts[-1], mode=dirCreateMode, dir_fd=currentDirFd)
+      resultFd = os.open(
+          pathNameParts[-1], fileOpenFlags, dir_fd=currentDirFd)
     return resultFd
   finally:
 # Make sure to close the currentDirFd, otherwise we leak one fd
@@ -725,7 +623,7 @@ def getFileOpenerInformation(pathNameList, checkMode=OPENER_INFO_FAIL_ON_ERROR):
     if pathName != os.path.realpath(pathName):
       raise Exception('%s is not an absolute, canonical path' % pathName)
 
-  if not checkMode in [OPENER_INFO_FAIL_ON_ERROR, OPENER_INFO_IGNORE_ACCESS_ERRORS]:
+  if checkMode not in [OPENER_INFO_FAIL_ON_ERROR, OPENER_INFO_IGNORE_ACCESS_ERRORS]:
     raise Exception('Invalid checkMode given')
 
   resultList = [None]*len(pathNameList)
@@ -767,13 +665,13 @@ def getFileOpenerInformation(pathNameList, checkMode=OPENER_INFO_FAIL_ON_ERROR):
           os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
       infoData = os.read(infoFd, 1<<16)
       os.close(infoFd)
-      splitPos = infoData.find('flags:\t')
+      splitPos = infoData.find(b'flags:\t')
       if splitPos < 0:
         raise Exception('Unexpected proc behaviour')
-      endPos = infoData.find('\n', splitPos)
+      endPos = infoData.find(b'\n', splitPos)
       infoTuple = (int(openFdName), int(infoData[splitPos+7:endPos], 8))
       while True:
-        if resultList[pathNameIndex] == None:
+        if resultList[pathNameIndex] is None:
           resultList[pathNameIndex] = [(procPid, [infoTuple])]
         else:
           pathNameInfo = resultList[pathNameIndex]
@@ -817,18 +715,27 @@ def openPersistencyFile(configContext, pathName, flags, mode):
   return secureOpenAt(
       -1, os.path.join(baseDir, pathName), symlinksAllowedFlag=False,
       dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
-      dirCreateMode=0700, fileOpenFlags=flags|os.O_NOFOLLOW|os.O_NOCTTY,
+      dirCreateMode=0o700, fileOpenFlags=flags|os.O_NOFOLLOW|os.O_NOCTTY,
       fileCreateMode=mode)
 
-def readFully(fd):
+def readFully(readFd):
   """Read data from a file descriptor until EOF is reached."""
   data = b''
   while True:
-    block = os.read(fd, 1<<16)
+    block = os.read(readFd, 1<<16)
     if len(block) == 0:
       break
     data += block
   return data
+
+def execConfigFile(configFileName, configContext):
+  """Load code from file and execute it with given global context."""
+  configFile = open(configFileName, 'r')
+  configData = configFile.read()
+  configFile.close()
+  configCode = compile(configData, configFileName, 'exec')
+  exec(configCode, configContext, configContext)
+
 
 # Load some classes into this namespace as shortcut for use in
 # configuration files.

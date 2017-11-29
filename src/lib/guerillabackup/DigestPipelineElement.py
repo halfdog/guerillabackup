@@ -2,9 +2,10 @@
 calculation."""
 
 import fcntl
-import guerillabackup
 import hashlib
 import os
+
+import guerillabackup
 
 class DigestPipelineElement(
     guerillabackup.TransformationPipelineElementInterface):
@@ -40,9 +41,9 @@ class DigestPipelineExecutionInstance(
 
   def getProcessOutput(self):
     """Get the output connector of this transformation process."""
-    if self.processOutputStream == None:
+    if self.processOutputStream is None:
       raise Exception('No access to process output in stream mode')
-    if self.processOutput == None:
+    if self.processOutput is None:
       self.processOutput = DigestOutputInterface(self)
     return self.processOutput
 
@@ -72,10 +73,10 @@ class DigestPipelineExecutionInstance(
 
   def start(self):
     """Start this execution process."""
-    if (self.processOutput == None) and (self.processOutputStream == None):
+    if (self.processOutput is None) and (self.processOutputStream is None):
       raise Exception('Not connected')
 
-    if self.digest == None:
+    if self.digest is None:
       raise Exception('Cannot restart again')
 # Nothing to do with that type of process.
 
@@ -84,7 +85,7 @@ class DigestPipelineExecutionInstance(
     @return None when the the instance was already stopped, information
     about stopping, e.g. the stop error message when the process
     was really stopped."""
-    if self.digest == None:
+    if self.processOutputBuffer != None:
       return None
     self.digestData = self.digest.digest()
     self.digest = None
@@ -112,13 +113,13 @@ class DigestPipelineExecutionInstance(
     due to filled buffers but should be attemted again. A value
     below zero indicates that all input data was processed and
     output buffers were flushed already."""
-    if self.digest == None:
+    if self.digest is None:
       return -1
     movedDataLength = 0
     if ((self.upstreamProcessOutput != None) and
         (len(self.processOutputBuffer) == 0)):
       self.processOutputBuffer = self.upstreamProcessOutput.readData(1<<16)
-      if self.processOutputBuffer == None:
+      if self.processOutputBuffer is None:
         self.upstreamProcessOutput = None
         self.digestData = self.digest.digest()
         self.digest = None
@@ -170,12 +171,13 @@ class DigestOutputInterface(
     @return the at most length bytes of data, zero-length data
     if nothing available at the moment and None when end of input
     was reached."""
-    if self.executionInstance.processOutputBuffer == None:
+    if self.executionInstance.processOutputBuffer is None:
       return None
     returnData = self.executionInstance.processOutputBuffer
     if length < len(self.executionInstance.processOutputBuffer):
       returnData = self.executionInstance.processOutputBuffer[:length]
-      self.executionInstance.processOutputBuffer = self.executionInstance.processOutputBuffer[length:]
+      self.executionInstance.processOutputBuffer = \
+          self.executionInstance.processOutputBuffer[length:]
     else:
       self.executionInstance.processOutputBuffer = ''
     return returnData

@@ -26,22 +26,52 @@ LogBackupUnitInputList = []
 
 # Include old (rotated) default syslog files, where serial number
 # was already appended. Accept also the compressed variants.
-# LogBackupUnitInputList.append(('/var/log', '^(auth\\.log|daemon\\.log|debug|kern\\.log|mail\\.err|mail\\.info|mail\\.log|mail\\.warn|messages|syslog)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$', None, None, None))
+# LogBackupUnitInputList.append((
+#     '/var/log',
+#     '^(auth\\.log|daemon\\.log|debug|kern\\.log|mail\\.err|mail\\.info|' \
+#         'mail\\.log|mail\\.warn|messages|syslog)\\.(?P<oldserial>[0-9]+)' \
+#         '(?:\\.(?P<compress>gz))?$',
+#     None, None, None))
 
 # Other logs and backup files:
-# LogBackupUnitInputList.append(('/var/log', '^(alternatives\\.log|btmp|dmesg|dpkg\\.log|wtmp)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$', None, None, None))
+# LogBackupUnitInputList.append((
+#     '/var/log',
+#     '^(alternatives\\.log|btmp|dmesg|dpkg\\.log|wtmp)\\.' \
+#         '(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$',
+#     None, None, None))
 
 # Apt logs:
-# LogBackupUnitInputList.append(('/var/log/apt', '^([a-z]+\\.log)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$', None, None, None))
+# LogBackupUnitInputList.append((
+#     '/var/log/apt',
+#     '^([a-z]+\\.log)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$',
+#     None, None, None))
 
 # Apache logs:
-# LogBackupUnitInputList.append(('/var/log/apache2', '^([0-9a-zA-Z.-]+)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$', None, None, None))
+# LogBackupUnitInputList.append((
+#     '/var/log/apache2',
+#     '^([0-9a-zA-Z.-]+)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$',
+#     None, None, None))
 
 # Firewall logs:
-# LogBackupUnitInputList.append(('/var/log/ulog', '^(ulogd\\.pcap)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$', None, None, None))
+# LogBackupUnitInputList.append((
+#     '/var/log/ulog',
+#     '^(ulogd\\.pcap)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$',
+#     None, None, None))
 
 # Tomcat logs:
-# LogBackupUnitInputList.append(('/var/log/tomcat8', '^(catalina\\.out)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$', None, None, None))
-# LogBackupUnitInputList.append(('/var/log/tomcat8', '^(catalina)\\.(?P<serial>[0-9-]{10})\\.log(?:\\.(?P<compress>gz))?$', 'catalina.log', None, None))
-# LogBackupUnitInputList.append(('/var/log/tomcat8', '^(localhost)\\.(?P<serial>[0-9-]{10})\\.log(?:\\.(?P<compress>gz))?$', 'localhost.log', None, None))
-# LogBackupUnitInputList.append(('/var/log/tomcat8', '^(localhost_access_log)\\.(?P<serial>[0-9-]{10})\\.txt(?:\\.(?P<compress>gz))?$', 'localhost_access_log.txt', None, None))
+# LogBackupUnitInputList.append((
+#     '/var/log/tomcat8',
+#     '^(catalina\\.out)\\.(?P<oldserial>[0-9]+)(?:\\.(?P<compress>gz))?$',
+#     None, None, None))
+# LogBackupUnitInputList.append((
+#     '/var/log/tomcat8',
+#     '^(catalina)\\.(?P<serial>[0-9-]{10})\\.log(?:\\.(?P<compress>gz))?$',
+#     'catalina.log', None, None))
+# LogBackupUnitInputList.append((
+#     '/var/log/tomcat8',
+#     '^(localhost)\\.(?P<serial>[0-9-]{10})\\.log(?:\\.(?P<compress>gz))?$',
+#     'localhost.log', None, None))
+# LogBackupUnitInputList.append((
+#     '/var/log/tomcat8',
+#     '^(localhost_access_log)\\.(?P<serial>[0-9-]{10})\\.txt(?:\\.(?P<compress>gz))?$',
+#     'localhost_access_log.txt', None, None))

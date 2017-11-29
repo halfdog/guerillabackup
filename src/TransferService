@@ -1,10 +1,10 @@
-#!/usr/bin/python2.7 -BEsStt
-# This file defines a simple transfer service, that supports inbound
-# connections via a listening socket or receiving of file descriptors
-# if supported. An authentication helper may then provide the
-# agentId information. Otherwise it is just the base64 encoded
-# binary struct sockAddr information extracted from the file descriptor.
-# Authorization has to be performed outside the this service.
+#!/usr/bin/python3 -BEsStt
+"""This file defines a simple transfer service, that supports
+inbound connections via a listening socket or receiving of file
+descriptors if supported. An authentication helper may then provide
+the agentId information. Otherwise it is just the base64 encoded
+binary struct sockAddr information extracted from the file descriptor.
+Authorization has to be performed outside the this service."""
 
 import sys
 # Adjust the Python sites path to include only the guerillabackup
@@ -15,8 +15,6 @@ sys.path = sys.path[1:] + ['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/l
 
 import errno
 import os
-import re
-import time
 
 import guerillabackup
 from guerillabackup.DefaultFileStorage import DefaultFileStorage
@@ -24,11 +22,12 @@ from guerillabackup.Transfer import SimpleTransferAgent
 from guerillabackup.Transfer import SocketConnectorService
 
 def createPolicy(config, classNameKey, initArgsKey):
+  """Create a policy with given keys."""
   policyClass = config.get(classNameKey, None)
-  if policyClass == None:
+  if policyClass is None:
     return None
   policyInitArgs = config.get(initArgsKey, None)
-  if policyInitArgs == None:
+  if policyInitArgs is None:
     return policyClass(config)
   policyInitArgs = [config]+policyInitArgs
   return policyClass(*policyInitArgs)
@@ -41,49 +40,53 @@ while argPos < len(sys.argv):
   argName = sys.argv[argPos]
   argPos += 1
   if not argName.startswith('--'):
-    print >>sys.stderr, 'Invalid argument "%s"' % argName
+    print('Invalid argument "%s"' % argName, file=sys.stderr)
     sys.exit(1)
   if argName == '--Config':
     serviceConfigFileName = sys.argv[argPos]
     argPos += 1
     continue
-  print >>sys.stderr, 'Unknown parameter "%s"' % argName
+  print('Unknown parameter "%s"' % argName, file=sys.stderr)
   sys.exit(1)
 
 if not os.path.exists(serviceConfigFileName):
-  print >>sys.stderr, 'Configuration file %s does not exist' % repr(serviceConfigFileName)
+  print('Configuration file %s does not exist' % repr(serviceConfigFileName), file=sys.stderr)
   sys.exit(1)
 mainConfig = {}
 try:
   mainConfig = {'guerillabackup': guerillabackup}
-  execfile(serviceConfigFileName, mainConfig, mainConfig)
-  mainConfig.__delitem__('__builtins__')
+  guerillabackup.execConfigFile(serviceConfigFileName, mainConfig)
 except:
-  print >>sys.stderr, 'Failed to load configuration %s' % repr(serviceConfigFileName)
+  print('Failed to load configuration %s' % repr(serviceConfigFileName), file=sys.stderr)
   import traceback
   traceback.print_tb(sys.exc_info()[2])
   sys.exit(1)
 
 # Initialize the storage.
 storageDirName = mainConfig.get('TransferServiceStorageBaseDir', None)
-if storageDirName == None:
+if storageDirName is None:
   storageDirName = mainConfig.get(
       guerillabackup.DefaultFileSystemSink.SINK_BASEDIR_KEY, None)
-if storageDirName == None:
-  print >>sys.stderr, 'No storage configured, use configuration key "TransferServiceStorageBaseDir"'
+if storageDirName is None:
+  print('No storage configured, use configuration key "%s"' % (
+      guerillabackup.DefaultFileSystemSink.SINK_BASEDIR_KEY),
+        file=sys.stderr)
   sys.exit(1)
 if not os.path.isdir(storageDirName):
-  print >>sys.stderr, 'Storage directory %s does not exist or is inaccessible' % repr(storageDirName)
+  print('Storage directory %s does not exist or is inaccessible' % repr(storageDirName),
+        file=sys.stderr)
   sys.exit(1)
 
 storage = DefaultFileStorage(storageDirName, mainConfig)
 transferAgent = SimpleTransferAgent()
 runtimeDataDirPathname = guerillabackup.getRuntimeDataDirPathname(mainConfig)
 
-receiverPolicy = createPolicy(mainConfig,
+receiverPolicy = createPolicy(
+    mainConfig,
     guerillabackup.TRANSFER_RECEIVER_POLICY_CLASS_KEY,
     guerillabackup.TRANSFER_RECEIVER_POLICY_INIT_ARGS_KEY)
-senderPolicy = createPolicy(mainConfig,
+senderPolicy = createPolicy(
+    mainConfig,
     guerillabackup.TRANSFER_SENDER_POLICY_CLASS_KEY,
     guerillabackup.TRANSFER_SENDER_POLICY_INIT_ARGS_KEY)
 

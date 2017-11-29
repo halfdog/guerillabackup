@@ -3,10 +3,11 @@ to the file system."""
 
 import datetime
 import errno
-import guerillabackup
 import hashlib
 import os
 import random
+
+import guerillabackup
 
 class DefaultFileSystemSink(guerillabackup.SinkInterface):
   """This class defines a sink to store backup data elements to
@@ -17,8 +18,9 @@ class DefaultFileSystemSink(guerillabackup.SinkInterface):
     self.testModeFlag = False
     storageDirName = configContext.get(
         DefaultFileSystemSink.SINK_BASEDIR_KEY, None)
-    if storageDirName == None:
-      raise Exception('Mandatory sink configuration parameter %s missing' % DefaultFileSystemSink.SINK_BASEDIR_KEY)
+    if storageDirName is None:
+      raise Exception('Mandatory sink configuration parameter ' \
+          '%s missing' % DefaultFileSystemSink.SINK_BASEDIR_KEY)
     self.storageDirName = None
     self.storageDirFd = -1
     self.openStorageDir(storageDirName, configContext)
@@ -34,12 +36,13 @@ class DefaultFileSystemSink(guerillabackup.SinkInterface):
         dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
         dirCreateMode=None,
         fileOpenFlags=os.O_DIRECTORY|os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY,
-        fileCreateMode=0700)
+        fileCreateMode=0o700)
 
     self.testModeFlag = configContext.get(
         guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY, False)
     if not isinstance(self.testModeFlag, bool):
-      raise Exception('Configuration parameter %s has to be boolean' % guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY)
+      raise Exception('Configuration parameter %s has to be ' \
+          'boolean' % guerillabackup.CONFIG_GENERAL_DEBUG_TEST_MODE_KEY)
 
   def getSinkHandle(self, sourceUrl):
     """Get a handle to perform transfer of a single backup data
@@ -65,8 +68,9 @@ class DefaultFileSystemSink(guerillabackup.SinkInterface):
           metaInfo.get('Timestamp')).strftime('%Y%m%d%H%M%S')
       backupTypeStr = metaInfo.get('BackupType')
     lastPartSplitPos = sourceUrl.rfind('/')
-    return((sourceUrl[:lastPartSplitPos], sourceUrl[lastPartSplitPos+1:],
-        fileTimestampStr, backupTypeStr))
+    return (
+        sourceUrl[:lastPartSplitPos], sourceUrl[lastPartSplitPos+1:],
+        fileTimestampStr, backupTypeStr)
 
 
 class DefaultFileSystemSinkHandle(guerillabackup.SinkHandleInterface):
@@ -88,9 +92,9 @@ class DefaultFileSystemSinkHandle(guerillabackup.SinkHandleInterface):
       self.storageDirFd = guerillabackup.secureOpenAt(
           storageDirFd, self.elementIdParts[0][1:], symlinksAllowedFlag=False,
           dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
-          dirCreateMode=0700,
+          dirCreateMode=0o700,
           fileOpenFlags=os.O_DIRECTORY|os.O_RDONLY|os.O_NOFOLLOW|os.O_CREAT|os.O_EXCL|os.O_NOCTTY,
-          fileCreateMode=0700)
+          fileCreateMode=0o700)
 
 # Generate a temporary file name in the same directory.
     while True:
@@ -101,7 +105,7 @@ class DefaultFileSystemSinkHandle(guerillabackup.SinkHandleInterface):
             dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
             dirCreateMode=None,
             fileOpenFlags=os.O_RDWR|os.O_NOFOLLOW|os.O_CREAT|os.O_EXCL|os.O_NOCTTY,
-            fileCreateMode=0600)
+            fileCreateMode=0o600)
         break
       except OSError as openError:
         if openError.errno != errno.EEXIST:
@@ -112,7 +116,7 @@ class DefaultFileSystemSinkHandle(guerillabackup.SinkHandleInterface):
     """Get the file descriptor to write directly to the open backup
     data element at the sink, if available.
     @return the file descriptor or None when not supported."""
-    if self.streamFd == None:
+    if self.streamFd is None:
       raise Exception('Illegal state, already closed')
     return self.streamFd
   def write(self, data):
@@ -131,7 +135,7 @@ class DefaultFileSystemSinkHandle(guerillabackup.SinkHandleInterface):
     or signature fields created on the fly while writing. See
     design and implementation documentation for requirements on
     those objects."""
-    if self.streamFd == None:
+    if self.streamFd is None:
       raise Exception('Illegal state, already closed')
     self.elementIdParts = DefaultFileSystemSink.internalGetElementIdParts(
         self.sourceUrl, metaInfo)
@@ -160,16 +164,16 @@ class DefaultFileSystemSinkHandle(guerillabackup.SinkHandleInterface):
       storageFileName = None
       while True:
         if serial < 0:
-          storageFileName = '%s-%s.data' % (self.elementIdParts[2],
-              fileNameMainStr)
+          storageFileName = '%s-%s.data' % (
+              self.elementIdParts[2], fileNameMainStr)
         else:
-          storageFileName = '%s%d-%s.data' % (self.elementIdParts[2],
-              serial, fileNameMainStr)
+          storageFileName = '%s%d-%s.data' % (
+              self.elementIdParts[2], serial, fileNameMainStr)
         serial += 1
         try:
-          guerillabackup.internalLinkAt(
-              self.storageDirFd, self.tmpFileName, self.storageDirFd,
-              storageFileName, 0)
+          os.link(
+              self.tmpFileName, storageFileName, src_dir_fd=self.storageDirFd,
+              dst_dir_fd=self.storageDirFd, follow_symlinks=False)
           break
         except OSError as linkError:
           if linkError.errno != errno.EEXIST:
@@ -178,7 +182,7 @@ class DefaultFileSystemSinkHandle(guerillabackup.SinkHandleInterface):
 # Now unlink the old file. With malicious actors we cannot be
 # sure to unlink the file we have currently opened, but in worst
 # case some malicious symlink is removed.
-      guerillabackup.internalUnlinkAt(self.storageDirFd, self.tmpFileName, 0)
+      os.unlink(self.tmpFileName, dir_fd=self.storageDirFd)
 
 # Now create the meta-information file. As the data file acted
 # as a lock, there is nothing to fail except for severe system
@@ -194,20 +198,19 @@ class DefaultFileSystemSinkHandle(guerillabackup.SinkHandleInterface):
           dirOpenFlags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOCTTY,
           dirCreateMode=None,
           fileOpenFlags=os.O_RDWR|os.O_NOFOLLOW|os.O_CREAT|os.O_EXCL|os.O_NOCTTY,
-          fileCreateMode=0600)
+          fileCreateMode=0o600)
       os.write(metaInfoFd, metaInfoStr)
       os.close(metaInfoFd)
       if self.testModeFlag:
 # Unlink all artefacts when operating in test mode to avoid accidential
-        guerillabackup.internalUnlinkAt(self.storageDirFd, storageFileName, 0)
-        guerillabackup.internalUnlinkAt(
-            self.storageDirFd, metaInfoFileName+'.tmp', 0)
+        os.unlink(storageFileName, dir_fd=self.storageDirFd)
+        os.unlink(metaInfoFileName+'.tmp', dir_fd=self.storageDirFd)
         raise Exception('No storage in test mode')
-      guerillabackup.internalLinkAt(
-          self.storageDirFd, metaInfoFileName+'.tmp', self.storageDirFd,
-          metaInfoFileName, 0)
-      guerillabackup.internalUnlinkAt(
-          self.storageDirFd, metaInfoFileName+'.tmp', 0)
+      os.link(
+          metaInfoFileName+'.tmp', metaInfoFileName,
+          src_dir_fd=self.storageDirFd, dst_dir_fd=self.storageDirFd,
+          follow_symlinks=False)
+      os.unlink(metaInfoFileName+'.tmp', dir_fd=self.storageDirFd)
     finally:
       os.close(self.storageDirFd)
       self.storageDirFd = None

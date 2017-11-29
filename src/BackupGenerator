@@ -1,6 +1,6 @@
-#!/usr/bin/python2.7 -BEsStt
-# This tool allows to generate handle scheduling of sources and
-# generation of backup data elements by writing them to a sink.
+#!/usr/bin/python3 -BEsStt
+"""This tool allows to generate handle scheduling of sources and
+generation of backup data elements by writing them to a sink."""
 
 import sys
 # Adjust the Python sites path to include only the guerillabackup
@@ -9,11 +9,12 @@ import sys
 # the local directory from the site path.
 sys.path = sys.path[1:]+['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib-enabled']
 
-import guerillabackup
 import os
 import re
 import time
 import traceback
+
+import guerillabackup
 
 backupConfigDirName = '/etc/guerillabackup'
 unitNameRegex = re.compile('^[0-9A-Za-z]+$')
@@ -23,26 +24,32 @@ while argPos < len(sys.argv):
   argName = sys.argv[argPos]
   argPos += 1
   if not argName.startswith('--'):
-    print >>sys.stderr, 'Invalid argument "%s"' % argName
+    print('Invalid argument "%s"' % argName, file=sys.stderr)
     sys.exit(1)
   if argName == '--ConfigDir':
     backupConfigDirName = sys.argv[argPos]
     argPos += 1
     continue
-  print >>sys.stderr, 'Unknown parameter "%s"' % argName
+  print('Unknown parameter "%s"' % argName, file=sys.stderr)
   sys.exit(1)
+
+# Make stdout, stderr unbuffered to avoid data lingering in buffers
+# when output is piped to another program.
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 1)
+sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', 1)
 
 mainConfig = {}
 mainConfigFileName = os.path.join(backupConfigDirName, 'config')
 if not os.path.exists(backupConfigDirName):
-  print >>sys.stderr, 'Configuration file %s does not exist' % repr(mainConfigFileName)
+  print('Configuration file %s does not exist' % repr(mainConfigFileName), file=sys.stderr)
   sys.exit(1)
 try:
   mainConfig = {'guerillabackup': guerillabackup}
-  execfile(mainConfigFileName, mainConfig, mainConfig)
+  guerillabackup.execConfigFile(mainConfigFileName, mainConfig)
   mainConfig.__delitem__('__builtins__')
 except Exception as loadException:
-  print >>sys.stderr, 'Failed to load configuration "%s": %s' % (mainConfigFileName, str(loadException))
+  print('Failed to load configuration "%s": %s' % (
+      mainConfigFileName, str(loadException)), file=sys.stderr)
   traceback.print_tb(sys.exc_info()[2])
   sys.exit(1)
 
@@ -67,7 +74,7 @@ for unitFileName in unitDirFileList[:]:
     continue
 
   matcher = unitNameRegex.match(unitFileName)
-  if matcher == None:
+  if matcher is None:
     continue
   unitDirFileList.remove(unitFileName)
 
@@ -81,19 +88,20 @@ for unitFileName in unitDirFileList[:]:
       unitDirFileList.remove(unitFileName+'.config')
     except:
       pass
-    execfile(unitConfigFileName, unitConfig, unitConfig)
+    guerillabackup.execConfigFile(unitConfigFileName, unitConfig)
     unitConfig.__delitem__('__builtins__')
 
 # Load the code within a new namespace and create unit object
 # from class with the same name as the file.
   localsDict = {}
-  execfile(os.path.join(unitDir, unitFileName), localsDict, localsDict)
+  guerillabackup.execConfigFile(os.path.join(unitDir, unitFileName), localsDict)
   unitClass = localsDict[guerillabackup.GENERATOR_UNIT_CLASS_KEY]
   unitObject = unitClass(unitFileName, unitConfig)
   unitList.append(unitObject)
 
 for unhandledFileName in unitDirFileList:
-  print >>sys.stderr, 'WARNING: File %s/%s is not unit definition nor unit configuration for activated unit' % (unitDir, unhandledFileName)
+  print('WARNING: File %s/%s is not unit definition nor unit configuration ' \
+      'for activated unit' % (unitDir, unhandledFileName), file=sys.stderr)
 
 # Now all units are loaded, start the scheduling.
 while True:

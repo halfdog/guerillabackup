@@ -21,7 +21,8 @@ class TransferContext():
   side and to assign the correct agent id if needed.
   @param localStorage local storage to used by policies for data
   retrieval and storage."""
-  def __init__(self, agentId, receiverTransferPolicy, senderTransferPolicy,
+  def __init__(
+      self, agentId, receiverTransferPolicy, senderTransferPolicy,
       localStorage):
     self.agentId = agentId
     self.receiverTransferPolicy = receiverTransferPolicy
@@ -33,11 +34,13 @@ class TransferContext():
     self.shutdownAcceptedFlag = False
 
   def connect(self, clientProtocolAdapter, serverProtocolAdapter):
+    """Connect this context with the client and server adapters."""
     self.clientProtocolAdapter = clientProtocolAdapter
     self.serverProtocolAdapter = serverProtocolAdapter
 
   def offerShutdown(self):
-    if self.clientProtocolAdapter == None:
+    """Offer protocol shutdown to the other side."""
+    if self.clientProtocolAdapter is None:
       raise Exception('Cannot offer shutdown while not connected')
     if self.shutdownOfferedFlag:
       raise Exception('Shutdown already offered')
@@ -45,23 +48,16 @@ class TransferContext():
     self.shutdownOfferedFlag = True
 
   def waitForShutdown(self):
+    """Wait for the remote side to offer a shutdown and accept
+    it."""
     if self.shutdownAcceptedFlag:
       return
     self.clientProtocolAdapter.waitForShutdown()
     self.shutdownAcceptedFlag = True
 
   def isShutdownAccepted(self):
+    """Check if we already accepted a remote shutdown offer."""
     return self.shutdownAcceptedFlag
-
-
-class PolicyViolationException(Exception):
-  def __init__(self, message, errorAttributeDict):
-    """@param errorAttributeDict when not None, try to set those
-    attributes in remote TransferAgent. This is useful to control
-    behaviour on other sides to resolve the failure, e.g. remove
-    the problematic element from being listed in the next run."""
-    Exception.__init__(self, message)
-    self.errorAttributeDict = errorAttributeDict
 
 
 class ProtocolDataElementStream:
@@ -123,7 +119,8 @@ class ClientProtocolInterface:
     element. Extraction of associated stream data is only be possible
     until proceeding to the next FileInfo using nextDataElement().
     @return a tuple with the source URL, metadata and the attribute
-    dictionary visible to the client."""
+    dictionary visible to the client or None when no element is
+    currently selected."""
     raise Exception('Interface method called')
 
   def getDataElementStream(self):
@@ -193,8 +190,9 @@ class ServerProtocolInterface:
     The method can be invoked more than once on the same data
     element. Extraction of associated stream data is only be possible
     until proceeding to the next FileInfo using nextDataElement().
-    @return a tuple with the metadata and the attribute dictionary
-    visible to the client."""
+    @return a tuple with the source URL, metadata and the attribute
+    dictionary visible to the client or None when no element is
+    currently selected."""
     raise Exception('Interface method called')
 
   def getDataElementStream(self):
@@ -330,7 +328,8 @@ class ReceiverStoreDataTransferPolicy(ReceiverTransferPolicy):
 # element is also present in local storage.
     transferContext.clientProtocolAdapter.startTransaction(None)
     while transferContext.clientProtocolAdapter.nextDataElement(True):
-      (sourceUrl, metaInfo, attributeDict) = transferContext.clientProtocolAdapter.getDataElementInfo()
+      (sourceUrl, metaInfo, attributeDict) = \
+          transferContext.clientProtocolAdapter.getDataElementInfo()
 # Now we know about the remote object. See if it is already available
 # within local storage.
       localElement = transferContext.localStorage.getBackupDataElementForMetaData(
@@ -343,7 +342,7 @@ class ReceiverStoreDataTransferPolicy(ReceiverTransferPolicy):
       dataStream = transferContext.clientProtocolAdapter.getDataElementStream()
       while True:
         streamData = dataStream.read()
-        if streamData == '':
+        if streamData == b'':
           break
         sinkHandle.write(streamData)
       sinkHandle.close(metaInfo)
@@ -372,7 +371,7 @@ class SimpleTransferAgent(TransferAgent):
     this connection was closed already."""
     try:
       if not self.ensurePolicyCompliance(transferContext):
-        print >>sys.stderr, 'Incompatible policies detected, shutting down'
+        print('Incompatible policies detected, shutting down', file=sys.stderr)
       elif transferContext.receiverTransferPolicy != None:
 # So remote sender policy is compliant to local storage policy.
 # Recheck local policy until we are done.
@@ -384,7 +383,7 @@ class SimpleTransferAgent(TransferAgent):
       transferContext.waitForShutdown()
     except OSError as communicationError:
       if communicationError.errno == errno.ECONNRESET:
-        print >>sys.stderr, '%s' % communicationError[1]
+        print('%s' % communicationError.args[1], file=sys.stderr)
       else:
         raise
     finally:
@@ -394,10 +393,10 @@ class SimpleTransferAgent(TransferAgent):
     """Check that remote sending policy is compliant to local
     receiver policy or both policies are not set."""
     policyInfo = transferContext.clientProtocolAdapter.getRemotePolicyInfo()
-    if transferContext.receiverTransferPolicy == None:
+    if transferContext.receiverTransferPolicy is None:
 # We are not expecting to receive anything, so remote policy can
 # never match local one.
-      return policyInfo == None
+      return policyInfo is None
     return transferContext.receiverTransferPolicy.isSenderPolicyCompatible(
         policyInfo)
 
@@ -424,7 +423,7 @@ class DefaultTransferAgentServerProtocolAdapter(ServerProtocolInterface):
     to local settings and ReceiverTransferPolicy.
     @return information about the installed SenderTransferPolicy
     or None without a policy."""
-    if self.transferContext.senderTransferPolicy == None:
+    if self.transferContext.senderTransferPolicy is None:
       return None
     return self.transferContext.senderTransferPolicy.getPolicyInfo()
 
@@ -438,7 +437,9 @@ class DefaultTransferAgentServerProtocolAdapter(ServerProtocolInterface):
     if self.currentDataElement != None:
       self.currentDataElement.invalidate()
       self.currentDataElement = None
-    self.transactionIterator = self.transferContext.senderTransferPolicy.queryBackupDataElements(self.transferContext, queryData)
+    self.transactionIterator = \
+        self.transferContext.senderTransferPolicy.queryBackupDataElements(
+            self.transferContext, queryData)
 
   def nextDataElement(self, wasStoredFlag=False):
     """Move to the next FileInfo.
@@ -453,10 +454,10 @@ class DefaultTransferAgentServerProtocolAdapter(ServerProtocolInterface):
             self.transferContext, self.currentDataElement, wasStoredFlag)
       self.currentDataElement.invalidate()
       self.currentDataElement = None
-    if self.transactionIterator == None:
+    if self.transactionIterator is None:
       return False
     dataElement = self.transactionIterator.getNextElement()
-    if dataElement == None:
+    if dataElement is None:
       self.transactionIterator = None
       return False
     self.currentDataElement = WrappedStorageBackupDataElementFileInfo(
@@ -470,7 +471,7 @@ class DefaultTransferAgentServerProtocolAdapter(ServerProtocolInterface):
     until proceeding to the next FileInfo using nextDataElement().
     @return a tuple with the source URL, metadata and the attribute
     dictionary visible to the client."""
-    if self.currentDataElement == None:
+    if self.currentDataElement is None:
       return None
     return (self.currentDataElement.getSourceUrl(), self.currentDataElement.getMetaInfo(), None)
 
@@ -479,7 +480,7 @@ class DefaultTransferAgentServerProtocolAdapter(ServerProtocolInterface):
     While stream is open, no other protocol methods can be called.
     @throws Exception if no transaction is open or no current
     data element selected for transfer."""
-    if self.currentDataElement == None:
+    if self.currentDataElement is None:
       raise Exception('No data element selected')
     return self.currentDataElement.getDataStream()
 
@@ -498,7 +499,8 @@ class WrappedStorageBackupDataElementFileInfo():
     return self.dataElement.getSourceUrl()
 
   def getMetaInfo(self):
-    """Get only the metadata part of this element"""
+    """Get only the metadata part of this element.
+    @return a BackupElementMetainfo object"""
     return self.dataElement.getMetaData()
 
   def getAttributes(self):
@@ -524,7 +526,7 @@ class WrappedStorageBackupDataElementFileInfo():
     """Make sure all resources associated with this element are
     released.
     @throws Exception if element is currently in use, e.g. read."""
-# FIXME: No real in-use test yet.
+# Nothing to invalidate here when using primitive, uncached wrapping.
     pass
 
 
@@ -537,84 +539,6 @@ class MultipartResponseIterator():
     """Get the next part from this iterator.
     @return the part data or None when no more parts are available."""
     raise Exception('Interface method called')
-
-
-class MultiplexerResponseReceiverStream():
-  """This class implements a receiver side for stream response
-  reading."""
-
-  def __init__(self, streamMultiplexer, requestData):
-    """Start reading a remote stream."""
-    self.streamMultiplexer = streamMultiplexer
-    (self.dataBuffer, inStreamReadingFlag) = streamMultiplexer.sendRequest(
-        requestData)
-    if not inStreamReadingFlag:
-      raise Exception('Expected stream reading but got normal response')
-    self.endOfStreamFlag = False
-
-  def read(self, readLength=0):
-    """Read data from the current data element.
-    @param readLength if not zero, return a chunk of data with
-    at most the given length. When zero, return chunks with the
-    default size of the underlying IO layer.
-    @return the amount of data read or an empty string when end
-    of stream was reached."""
-    if self.endOfStreamFlag:
-      raise Exception('Invalid state')
-    result = None
-    if self.dataBuffer != None:
-      if readLength == 0:
-        result = self.dataBuffer
-        self.dataBuffer = None
-      else:
-        result = self.dataBuffer[:readLength]
-        if len(self.dataBuffer) <= readLength:
-          self.dataBuffer = None
-        else:
-          self.dataBuffer = self.dataBuffer[readLength:]
-    else:
-# Read more data.
-      responseData = None
-      while True:
-        (responseData, inStreamReadingFlag) = self.streamMultiplexer.internalIOHandler(None, 600)
-        if inStreamReadingFlag:
-          if len(responseData) != 0:
-            break
-        else:
-          if len(responseData) != 0:
-            raise Exception('Protocol error')
-          break
-      if (readLength != 0) and (len(result) > readLength):
-        self.dataBuffer = result[readLength:]
-        result = result[:readLength]
-    if len(result) == 0:
-      self.endOfStreamFlag = True
-    return result
-
-  def close(self):
-    """Close the stream. This call might discard data already
-    buffered within this object or the underlying IO layer. This
-    method has to be invoked also when the end of the stream was
-    reached."""
-    if self.endOfStreamFlag:
-      return
-
-# This is an exception to the normal client/server protocol: send
-# the abort request even while the current request is still being
-# processed.
-    self.streamMultiplexer.abortStreamRequest()
-# Now continue reading until all buffers have drained and final
-# data chunk was removed.
-    while len(self.read()) != 0:
-      pass
-# Now read the response to the abort command itself.
-    (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
-        None)
-    if inStreamReadingFlag:
-      raise Exception('Protocol error')
-    if len(responseData) != 0:
-      raise Exception('Unexpected response received')
-    self.endOfStreamFlag = True
 
 
 class StreamRequestResponseMultiplexer():
@@ -661,10 +585,11 @@ class StreamRequestResponseMultiplexer():
     for the previous requests using handleRequests, before submitting
     a new request.
     @rais Exception if multiplexer is in invalid state.
-    @return a tuple with the data and the response ID. The response
-    ID will stay the same for the initial response packet and
-    all no-response continuation packets."""
-    if (requestData == None) or (len(requestData) == 0):
+    @return response data when a response was pending and data
+    was received within time. The data is is a tuple containing
+    the binary content and a boolean value indicating if the received
+    data is a complete response or belonging to a stream."""
+    if (requestData is None) or (len(requestData) == 0):
       raise Exception('No request data given')
     if self.responsePendingFlag:
       raise Exception('Cannot queue another request while response is pending')
@@ -711,13 +636,13 @@ class StreamRequestResponseMultiplexer():
     try:
       os.close(self.inputFd)
     except Exception as closeException:
-      print >>sys.stderr, 'Closing of input stream failed'
+      print('Closing of input stream failed', file=sys.stderr)
       pendingException = closeException
     if self.outputFd != self.inputFd:
       try:
         os.close(self.outputFd)
       except Exception as closeException:
-        print >>sys.stderr, 'Closing of output stream failed'
+        print('Closing of output stream failed', file=sys.stderr)
         pendingException = closeException
     self.inputFd = -1
     self.outputFd = -1
@@ -744,7 +669,7 @@ class StreamRequestResponseMultiplexer():
     @throws Exception when protocol violations were detected."""
     sendQueue = []
     writeSelectFds = []
-    if requestData == None:
+    if requestData is None:
       if self.shutdownOfferReceivedFlag and not self.inStreamResponseFlag:
         raise Exception(
             'Request handling attempted after remote shutdown was offered')
@@ -766,7 +691,7 @@ class StreamRequestResponseMultiplexer():
     while True:
       if (self.shutdownOfferReceivedFlag and (len(writeSelectFds) == 0) and
           not self.responsePendingFlag):
-# Sendqueue must have been drained and no more quests to await.
+# Sendqueue must have been drained and no more requests to await.
         break
       if not ioHandledFlag:
         nextSelectTime = selectEndTime-time.time()
@@ -789,7 +714,7 @@ class StreamRequestResponseMultiplexer():
           if len(sendQueue) == 0:
             if self.responsePartIterator != None:
               nextPart = self.responsePartIterator.getNextPart()
-              if nextPart == None:
+              if nextPart is None:
                 sendQueue.append([b'R\x00\x00\x00\x00', 0])
                 self.responsePartIterator = None
               else:
@@ -847,14 +772,14 @@ class StreamRequestResponseMultiplexer():
           continue
 
 # Check the code.
-        if not(self.remoteData[0] in ['P', 'R', 'S']):
-          raise Exception('Invalid packet type 0x%x' % ord(self.remoteData[0]))
+        if self.remoteData[0] not in b'PRS':
+          raise Exception('Invalid packet type 0x%x' % self.remoteData[0])
 
-        if self.remoteData[0] != 'S':
+        if not self.remoteData.startswith(b'S'):
           if not self.responsePendingFlag:
             raise Exception(
-                'Received %s packet while not awaiting response' % self.remoteData[0])
-          if self.remoteData[0] == 'P':
+                'Received %s packet while not awaiting response' % repr(self.remoteData[0:1]))
+          if self.remoteData.startswith(b'P'):
 # So this is the first or an additional fragment for a previous response.
             self.inStreamResponseFlag = True
           else:
@@ -897,7 +822,6 @@ class StreamRequestResponseMultiplexer():
         self.remoteDataLength = -1
         ioHandledFlag = True
     return responseData
-
 
 class JsonClientProtocolDataElementStream(ProtocolDataElementStream):
   """This is an implementation of the stream interface to work
@@ -971,9 +895,9 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
     files is impossible."""
     if self.inStreamReadingFlag:
       raise Exception('Illegal state')
-    (responseData, responseId) = self.streamMultiplexer.sendRequest(
-        json.dumps(['getPolicyInfo']))
-    return json.loads(responseData)
+    (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
+        bytes(json.dumps(['getPolicyInfo']), 'ascii'))
+    return json.loads(str(responseData, 'ascii'))
 
   def startTransaction(self, queryData):
     """Start or restart a query transaction to retrive files from
@@ -984,8 +908,8 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
     data was not understood by remote side."""
     if self.inStreamReadingFlag:
       raise Exception('Illegal state')
-    (responseData, responseId) = self.streamMultiplexer.sendRequest(
-        json.dumps(['startTransaction', queryData]))
+    (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
+        bytes(json.dumps(['startTransaction', queryData]), 'ascii'))
     if len(responseData) != 0:
       raise Exception('Unexpected response received')
 
@@ -996,9 +920,9 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
     @return True if a next FileInfo is available, False otherwise."""
     if self.inStreamReadingFlag:
       raise Exception('Illegal state')
-    (responseData, responseId) = self.streamMultiplexer.sendRequest(
-        json.dumps(['nextDataElement', wasStoredFlag]))
-    return json.loads(responseData)
+    (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
+        bytes(json.dumps(['nextDataElement', wasStoredFlag]), 'ascii'))
+    return json.loads(str(responseData, 'ascii'))
 
   def getDataElementInfo(self):
     """Get information about the currently selected FileInfo.
@@ -1008,10 +932,11 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
     dictionary visible to the client."""
     if self.inStreamReadingFlag:
       raise Exception('Illegal state')
-    (responseData, responseId) = self.streamMultiplexer.sendRequest(
-        json.dumps(['getDataElementInfo']))
-    result = json.loads(responseData)
-    result[1] = BackupElementMetainfo.unserialize(result[1])
+    (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
+        bytes(json.dumps(['getDataElementInfo']), 'ascii'))
+    result = json.loads(str(responseData, 'ascii'))
+    result[1] = BackupElementMetainfo.unserialize(
+        bytes(result[1], 'ascii'))
     return result
 
   def getDataElementStream(self):
@@ -1063,7 +988,7 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
     responseId = None
     if startStreamFlag:
       (responseData, responseId) = self.streamMultiplexer.sendRequest(
-          json.dumps(['getDataElementStream']))
+          bytes(json.dumps(['getDataElementStream']), 'ascii'))
     else:
       (responseData, responseId) = self.streamMultiplexer.handleRequests(1000)
     if len(responseData) == 0:
@@ -1079,7 +1004,7 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
 # the abort request even while the current request is still being
 # processed.
     (responseData, responseId) = self.streamMultiplexer.sendRequest(
-        json.dumps(['abortDataElementStream']))
+        bytes(json.dumps(['abortDataElementStream']), 'ascii'))
 # Now continue reading until all buffers have drained and final
 # data chunk was removed.
     while len(self.internalReadDataStream()) != 0:
@@ -1117,7 +1042,7 @@ class JsonStreamServerProtocolRequestHandler():
   def handleRequest(self, requestData):
     """Handle an incoming request.
     @return the serialized data."""
-    request = json.loads(requestData)
+    request = json.loads(str(requestData, 'ascii'))
     if not isinstance(request, list):
       raise Exception('Unexpected request data')
     requestMethod = request[0]
@@ -1133,7 +1058,7 @@ class JsonStreamServerProtocolRequestHandler():
     elif requestMethod == 'getDataElementInfo':
       elementInfo = self.serverProtocolAdapter.getDataElementInfo()
 # Meta information needs separate serialization, do it.
-      responseData = (elementInfo[0], elementInfo[1].serialize(), elementInfo[2])
+      responseData = (elementInfo[0], str(elementInfo[1].serialize(), 'ascii'), elementInfo[2])
     elif requestMethod == 'getDataElementStream':
       responseData = WrappedFileStreamMultipartResponseIterator(
           self.serverProtocolAdapter.getDataElementStream())
@@ -1143,15 +1068,16 @@ class JsonStreamServerProtocolRequestHandler():
       return b''
     if isinstance(responseData, MultipartResponseIterator):
       return responseData
-    return json.dumps(responseData)
+    return bytes(json.dumps(responseData), 'ascii')
 
 
 class SocketConnectorService():
   """This class listens on a socket and creates a TransferContext
   for each incoming connection."""
 
-  def __init__(self, socketPath, receiverTransferPolicy,
-      senderTransferPolicy, localStorage, transferAgent):
+  def __init__(
+      self, socketPath, receiverTransferPolicy, senderTransferPolicy,
+      localStorage, transferAgent):
     """Create this service to listen on the given path.
     @param socketPath the path where to create the local UNIX
     socket. The service will not create the directory required
@@ -1181,7 +1107,7 @@ class SocketConnectorService():
   def run(self):
     """Run this connector service. The method will not return until
     shutdown is requested by another thread."""
-    if self.socket == None:
+    if self.socket is None:
       raise Exception('Already shutdown')
     serverSocket = self.socket
     self.isRunningFlag = True
