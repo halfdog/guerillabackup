@@ -85,10 +85,18 @@ class DigestPipelineExecutionInstance(
     @return None when the the instance was already stopped, information
     about stopping, e.g. the stop error message when the process
     was really stopped."""
+    stopException = None
     if self.processOutputBuffer != None:
+      data = self.upstreamProcessOutput.read(64)
+      self.upstreamProcessOutput.close()
+      if data != None:
+        stopException = Exception('Upstream output still open, there might be unprocessed data')
+
+    if self.digest is None:
       return None
     self.digestData = self.digest.digest()
     self.digest = None
+    return stopException
 
   def isRunning(self):
     """See if this process instance is still running."""
@@ -120,6 +128,7 @@ class DigestPipelineExecutionInstance(
         (len(self.processOutputBuffer) == 0)):
       self.processOutputBuffer = self.upstreamProcessOutput.readData(1<<16)
       if self.processOutputBuffer is None:
+        self.upstreamProcessOutput.close()
         self.upstreamProcessOutput = None
         self.digestData = self.digest.digest()
         self.digest = None
