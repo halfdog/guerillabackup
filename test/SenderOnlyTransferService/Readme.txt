@@ -22,7 +22,7 @@ ln -s -- "${projectBaseDir}/src/lib/guerillabackup/TarBackupUnit.py" "${tmpDir}/
 Terminate the generator using [Ctrl]-C and check, that backups
 were created.
 
-ls -al -- "${tmpDir}/data"
+ls -alR -- "${tmpDir}/data"
 
 
 TransferService invocation:
