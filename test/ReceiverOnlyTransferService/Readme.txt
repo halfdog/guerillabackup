@@ -14,6 +14,7 @@ tmpDir="$(mktemp -d)"
 mkdir -- "${tmpDir}/config" "${tmpDir}/data"
 cp -a -- "${projectBaseDir}/test/ReceiverOnlyTransferService/config" "${tmpDir}/config"
 sed -i -r -e "s:\[TmpDir\]:${tmpDir}:g" -- "${tmpDir}/config/config"
+echo "Listening on socket ${tmpDir}/run/transfer.socket"
 "${projectBaseDir}/src/TransferService" --Config "${tmpDir}/config/config"
 
 Connect the TransferService to an instance with a sending policy,
