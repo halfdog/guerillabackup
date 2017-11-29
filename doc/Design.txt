@@ -190,7 +190,15 @@ Design:
     is still required to await normal termination or errors when
     triggering processing: an asynchronous process may terminate
     after an unpredictable amount of time due to calculation or
-    IO activites not infering with the pipeline data streams.
+    IO activites not interfering with the pipeline data streams.
+  * Due to the asynchronous nature of pipeline processing and
+    the use of file descriptors for optimization, closing of those
+    descriptors may only occur after the last component using
+    a descriptor has released it. The downstream component alone
+    is allowed to close it and is also in charge of closing it.
+    If a downstream component is multithreaded and one thread
+    is ready to close it, another one still needs it, then the
+    downstream component has to solve that problem on its own.
   * When all synchronous pipeline elements are stuck, select on
     all blocking file descriptors from those elements until the
     first one is ready for IO again.
