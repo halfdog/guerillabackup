@@ -11,8 +11,6 @@ Vcs-Browser: https://github.com/halfdog/guerillabackup
 Package: guerillabackup
 Architecture: all
 Depends: ${python:Depends}, ${misc:Depends}
-Section: misc
-Priority: extra
 Description: resilient, distributed backup and archiving solution
  The tool supports asynchronous, local-coordinated, distributed
  secure backup generation, forwarding, verification, storage
