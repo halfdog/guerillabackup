@@ -1,8 +1,9 @@
 """This module provides streams for linking of pipeline elements."""
 
-import guerillabackup
 import os
 import select
+
+import guerillabackup
 
 class TransformationProcessOutputStream(
     guerillabackup.TransformationProcessOutputInterface):
@@ -35,6 +36,21 @@ class TransformationProcessOutputStream(
       return None
     return data
 
+  def close(self):
+    """Close this interface. This will guarantee, that any future
+    access will report EOF or an error.
+    @raise Exception if close is attempted there still is data
+    available."""
+    data = self.readData(64)
+    os.close(self.streamFd)
+    self.streamFd = -1
+
+    if data != None:
+      if len(data) == 0:
+        raise Exception('Closing output before EOF, data might be lost')
+      else:
+        raise Exception('Unhandled data in stream lost due to close before EOF')
+
 
 class NullProcessOutputStream(
     guerillabackup.TransformationProcessOutputInterface):
@@ -50,3 +66,10 @@ class NullProcessOutputStream(
     if nothing available at the moment and None when end of input
     was reached."""
     return None
+
+  def close(self):
+    """Close this interface. This will guarantee, that any future
+    access will report EOF or an error.
+    @raise Exception if close is attempted there still is data
+    available."""
+    pass
