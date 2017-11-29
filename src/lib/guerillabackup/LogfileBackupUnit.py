@@ -101,6 +101,8 @@ class LogfileSourceInfo():
     self.sourceUrl = sourceUrl
     self.serialTypesConsistentFlag = True
     self.serialType = None
+# List of tracked file information records. Each record is a tuple
+# with 3 values: file name, regex matcher and serial data.
     self.fileList = []
 
   def addFile(self, fileName, matcher):
@@ -325,10 +327,6 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # Make sure, that the file is not written any more.
           logFilePathName = os.path.join(
               unitInput.inputDirectoryName, fileName)
-# Build the transformation pipeline instance.
-          fileHandle = guerillabackup.secureOpenAt(
-              inputDirectoryFd, fileName,
-              fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
           isOpenForWritingFlag = False
           if fileInfoList[fileListIndex] != None:
             for pid, fdInfoList in fileInfoList[fileListIndex]:
@@ -364,6 +362,8 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
               inputDirectoryFd, fileName,
               fileOpenFlags=os.O_RDONLY|os.O_NOFOLLOW|os.O_NOCTTY)
           logFileStatData = os.fstat(logFileFd)
+# By wrapping the logFileFd into this object, the first pipeline
+# element will close it. So we do not need to care here.
           logFileOutput = TransformationProcessOutputStream(logFileFd)
 
           sinkHandle = sink.getSinkHandle(sourceInfo.sourceUrl)
@@ -398,7 +398,6 @@ class LogfileBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
           metaInfoDict['DataUuid'] = currentUuid
           metaInfoDict['StorageFileChecksumSha512'] = digestData
           metaInfoDict['Timestamp'] = int(logFileStatData.st_mtime)
-          os.close(logFileFd)
 
           metaInfo = BackupElementMetainfo(metaInfoDict)
           sinkHandle.close(metaInfo)
