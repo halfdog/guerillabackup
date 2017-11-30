@@ -1,6 +1,9 @@
 #!/usr/bin/python3 -BEsStt
 """This client connects to a sync service and sends requests from
-stdin and prints the responses."""
+stdin and prints the responses. This can be used for testing of
+StreamRequestResponseMultiplexer from guerillabackup.Transfer.
+See source of StreamRequestResponseMultiplexer for description
+of protocol structure."""
 
 import sys
 sys.path = sys.path[1:] + ['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib-enabled']
@@ -39,7 +42,7 @@ while True:
     print('Received %d bytes of remote data' % len(readData), file=sys.stderr)
     remoteData += readData
   if len(remoteData) >= 5:
-    if remoteData[0] not in b'NRS':
+    if remoteData[0] not in b'APRS':
       print('Invalid remote data package type %s, purging data %s' % (
           repr(remoteData[0]), repr(remoteData)), file=sys.stderr)
       remoteData = b''
@@ -74,7 +77,7 @@ while True:
 
   if command == 'send':
     sendData = bytes(commandLine[commandLength+1:], sys.getdefaultencoding())
-    if (len(sendData) == 0) or (sendData[0] not in b'NRS'):
+    if (len(sendData) == 0) or (sendData[0] not in b'APRS'):
       print('Send data has to start with type letter, optionally ' \
           'followed by data %s' % repr(sendData), file=sys.stderr)
       continue
