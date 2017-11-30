@@ -466,8 +466,14 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 # Start the unit itself.
     backupCommand = tarUnitDescription.getBackupCommand(
         backupType, indexFilePathname)
+# Accept creation of tar archives only with zero exit status or
+# return code 1, when files were concurrently modified and those
+# races should be ignored.
+    allowedExitStatusList = [0]
+    if tarUnitDescription.ignoreBackupRacesFlag:
+      allowedExitStatusList.append(1)
     completePipleline = [guerillabackup.OSProcessPipelineElement(
-        '/bin/tar', backupCommand, allowedExitStatusList=[0, 2])]
+        '/bin/tar', backupCommand, allowedExitStatusList)]
 # Get the downstream transformation pipeline elements.
     completePipleline += guerillabackup.getDefaultDownstreamPipeline(
         self.configContext, tarUnitDescription.encryptionKeyName)
