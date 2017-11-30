@@ -553,7 +553,11 @@ class StreamRequestResponseMultiplexer():
     stream response, even when that packet has zero size. The
     final 'R' packet has always to be of zero size.
   * 'R' for the remote response packet containing the response
-    data."""
+    data.
+  Any exception due to protocol violations, multiplex connection
+  IO errors or requestHandler processing failures will cause the
+  multiplexer to shutdown all functionality immediately for security
+  reasons."""
   def __init__(self, inputFd, outputFd, requestHandler):
     """Create this multiplexer based on the given input and output
     file descriptors.
@@ -649,7 +653,7 @@ class StreamRequestResponseMultiplexer():
     self.shutdownOfferSentFlag = True
     self.shutdownOfferReceivedFlag = True
     if pendingException != None:
-      raise
+      raise pendingException
 
   def internalIOHandler(self, requestData, maxHandleTime):
     """Perform multiplexer IO operations. When requestData was
@@ -676,7 +680,8 @@ class StreamRequestResponseMultiplexer():
     else:
       sendQueue.append([b'S'+struct.pack('<I', len(requestData)), 0])
       self.responsePendingFlag = True
-      sendQueue.append([requestData, 0])
+      if len(requestData) != 0:
+        sendQueue.append([requestData, 0])
       writeSelectFds = [self.outputFd]
 # Always await data, no matter if we are sending a request. Without
 # requestData we are waiting for incoming data. When remote side
@@ -705,123 +710,165 @@ class StreamRequestResponseMultiplexer():
       readFds, writeFds, errorFds = select.select(
           readSelectFds, writeSelectFds, [], nextSelectTime)
       ioHandledFlag = False
+# writeFds may only contain the filedescriptor for data sending.
       if len(writeFds):
-        sendItem = sendQueue[0]
-        offset = sendItem[1]
-        writeResult = os.write(self.outputFd, sendItem[0][offset:])+offset
-        if writeResult == len(sendItem[0]):
-          del sendQueue[0]
-          if len(sendQueue) == 0:
-            if self.responsePartIterator != None:
-              nextPart = self.responsePartIterator.getNextPart()
-              if nextPart is None:
-                sendQueue.append([b'R\x00\x00\x00\x00', 0])
-                self.responsePartIterator = None
-              else:
-                sendQueue.append([b'P'+struct.pack('<I', len(nextPart)), 0])
-                sendQueue.append([nextPart, 0])
-            else:
-              writeSelectFds = []
-        else:
-          sendItem[1] = writeResult
+        self.internalIOWrite(sendQueue, writeSelectFds)
         ioHandledFlag = True
 
+# readFds may only contain the filedescriptor for data reading.
       if len(readFds):
-# There is response data for the current request or another remote
-# request to be received. Make sure not to overread the response.
-        if self.remoteDataLength < 0:
-          readData = os.read(self.inputFd, 5-len(self.remoteData))
-          if len(readData) == 0:
-            if self.responsePendingFlag:
-              raise OSError(
-                  errno.ECONNRESET, 'End of data while awaiting response')
-            if len(self.remoteData) != 0:
-              raise Exception('End of data with partial input')
+        stayInLoopFlag, readIoHandledFlag, interimResponseData = \
+            self.internalIORead(readSelectFds, writeSelectFds, sendQueue)
+        if interimResponseData != None:
+          if responseData != None:
+            raise Exception('Logic flaw')
+          responseData = interimResponseData
+        if readIoHandledFlag:
+          ioHandledFlag = True
+        if not stayInLoopFlag:
+          break
+    return responseData
+
+  def internalIORead(self, readSelectFds, writeSelectFds, sendQueue):
+    """This method handles response data for the current request
+    or another remote request to be received. Make sure not to
+    overread the response.
+    @param sendQueue when receiving e.g. shutdown requests, packets
+    have to be added to the queue.
+    @return a tuple with flag indicating if IO handling attempts
+    should continue, one if IO was really performed in internalIORead
+    and the reponseData to return to the client when leaving the
+    IO handling."""
+    if self.remoteDataLength < 0:
+      readData = os.read(self.inputFd, 5-len(self.remoteData))
+      if len(readData) == 0:
+        if self.responsePendingFlag:
+          raise OSError(
+              errno.ECONNRESET, 'End of data while awaiting response')
+        if len(self.remoteData) != 0:
+          raise Exception('End of data with partial input')
 # From here on, cannot read from closed descriptor anyway.
-            readSelectFds = []
-            if len(writeSelectFds) == 0:
+        del readSelectFds[0]
+        if len(writeSelectFds) == 0:
 # So this is the end of the stream. If shutdown negotiated was
 # not performed as specified by the protocol, then consider that
 # an unexpected connection shutdown.
-              if (not(self.wasShutdownOffered()) or
-                  not self.wasShutdownRequested()):
-                raise OSError(
-                    errno.ECONNRESET,
-                    'End of stream without shutdown negotiation')
-              break
-            continue
+          if (not(self.wasShutdownOffered()) or
+              not self.wasShutdownRequested()):
+            raise OSError(
+                errno.ECONNRESET,
+                'End of stream without shutdown negotiation')
+          return (False, False, None)
+# Reading is dead, but there might be the final packet of shutdown
+# negotiation to be sent yet. Therefore continue IO handling.
+        return (True, False, None)
 
 # So this was a normal read. Process the received data.
-          self.remoteData += readData
-          if len(self.remoteData) == 5:
-            self.remoteDataLength = struct.unpack('<I', self.remoteData[1:5])[0]
-            if (self.remoteDataLength < 0) or (self.remoteDataLength > (1<<20)):
-              raise Exception('Invalid input data chunk length 0x%x' % self.remoteDataLength)
-          self.remoteDataLength += 5
-          if self.remoteDataLength != 5:
-            continue
-        if self.remoteDataLength != 5:
-          readData = os.read(
-              self.inputFd, self.remoteDataLength-len(self.remoteData))
-          if len(readData) == 0:
-            if self.responsePendingFlag:
-              raise Exception('End of data while awaiting response')
-            raise Exception('End of data with partial input')
-          self.remoteData += readData
-        if len(self.remoteData) != self.remoteDataLength:
-          continue
+      self.remoteData += readData
+      if len(self.remoteData) < 5:
+# Still not enough, retry immediately.
+        return (True, True, None)
+
+      self.remoteDataLength = struct.unpack('<I', self.remoteData[1:5])[0]
+      if (self.remoteDataLength < 0) or (self.remoteDataLength > (1<<20)):
+        raise Exception('Invalid input data chunk length 0x%x' % self.remoteDataLength)
+      self.remoteDataLength += 5
+      if self.remoteDataLength != 5:
+# We read exactly 5 bytes but need more. Let the outer loop do that.
+        return (True, True, None)
+    if len(self.remoteData) < self.remoteDataLength:
+      readData = os.read(
+          self.inputFd, self.remoteDataLength-len(self.remoteData))
+      if len(readData) == 0:
+        if self.responsePendingFlag:
+          raise Exception('End of data while awaiting response')
+        raise Exception('End of data with partial input')
+      self.remoteData += readData
+    if len(self.remoteData) != self.remoteDataLength:
+      return (True, True, None)
 
 # Check the code.
-        if self.remoteData[0] not in b'PRS':
-          raise Exception('Invalid packet type 0x%x' % self.remoteData[0])
+    if self.remoteData[0] not in b'PRS':
+      raise Exception('Invalid packet type 0x%x' % self.remoteData[0])
 
-        if not self.remoteData.startswith(b'S'):
-          if not self.responsePendingFlag:
-            raise Exception(
-                'Received %s packet while not awaiting response' % repr(self.remoteData[0:1]))
-          if self.remoteData.startswith(b'P'):
+    if not self.remoteData.startswith(b'S'):
+# Not sending a request but receiving some kind of response.
+      if not self.responsePendingFlag:
+        raise Exception(
+            'Received %s packet while not awaiting response' % repr(self.remoteData[0:1]))
+      if self.remoteData.startswith(b'P'):
 # So this is the first or an additional fragment for a previous response.
-            self.inStreamResponseFlag = True
-          else:
-            self.responsePendingFlag = False
-            self.inStreamResponseFlag = False
-          responseData = (self.remoteData[5:], self.inStreamResponseFlag)
-          self.remoteData = b''
-          self.remoteDataLength = -1
-          if len(sendQueue) == 0:
-            break
-          continue
+        self.inStreamResponseFlag = True
+      else:
+        self.responsePendingFlag = False
+        self.inStreamResponseFlag = False
+      responseData = (self.remoteData[5:], self.inStreamResponseFlag)
+      self.remoteData = b''
+      self.remoteDataLength = -1
+# We could receive multiple response packets while sendqueue was
+# not yet flushed containing outgoing responses to requests processed.
+# Although all those responses would belong to the same request,
+# fusion is not an option to avoid memory exhaustion. So we have
+# to delay returning of response data until sendqueue is emptied.
+      return (len(sendQueue) != 0, True, responseData)
 
 # So this was another incoming request. Handle it and queue the
 # response data.
-        if self.responsePartIterator != None:
-          raise Exception(
-              'Cannot handle additional request while previous one not done')
-        if self.shutdownOfferReceivedFlag:
-          raise Exception('Received request even after shutdown was offered')
+    if self.responsePartIterator != None:
+      raise Exception(
+          'Cannot handle additional request while previous one not done')
+    if self.shutdownOfferReceivedFlag:
+      raise Exception('Received request even after shutdown was offered')
 
-        if self.remoteDataLength == 5:
+    if self.remoteDataLength == 5:
 # This is a remote shutdown offer, the last request from the remote
 # side. Prepare for shutdown.
-          self.shutdownOfferReceivedFlag = True
+      self.shutdownOfferReceivedFlag = True
+      sendQueue.append([b'R\x00\x00\x00\x00', 0])
+      if not self.responsePendingFlag:
+        del readSelectFds[0]
+    else:
+      handlerResponse = self.requestHandler.handleRequest(
+          self.remoteData[5:])
+      handlerResponseType = b'R'
+      if isinstance(handlerResponse, MultipartResponseIterator):
+        self.responsePartIterator = handlerResponse
+        handlerResponse = handlerResponse.getNextPart()
+        handlerResponseType = b'P'
+# Empty files might not even return a single part. But stream
+# responses have to contain at least one 'P' type packet, so send
+# an empty one.
+        if handlerResponse is None:
+          handlerResponse = b''
+      sendQueue.append([handlerResponseType+struct.pack('<I', len(handlerResponse)), 0])
+# Add response as separate packet. It might be last, thus this
+# will avoid an additional memory buffer copy operation.
+      sendQueue.append([handlerResponse, 0])
+    writeSelectFds[:] = [self.outputFd]
+    self.remoteData = b''
+    self.remoteDataLength = -1
+    return (True, True, None)
+
+  def internalIOWrite(self, sendQueue, writeSelectFds):
+    """Try to write the data from the first queue item to the
+    stream."""
+    sendItem = sendQueue[0]
+    offset = sendItem[1]
+    writeResult = os.write(self.outputFd, sendItem[0][offset:])+offset
+    if writeResult == len(sendItem[0]):
+      del sendQueue[0]
+      if (len(sendQueue) == 0) and (self.responsePartIterator != None):
+        nextPart = self.responsePartIterator.getNextPart()
+        if nextPart is None:
           sendQueue.append([b'R\x00\x00\x00\x00', 0])
-          if not self.responsePendingFlag:
-            readSelectFds = []
+          self.responsePartIterator = None
         else:
-          handlerResponse = self.requestHandler.handleRequest(
-              self.remoteData[5:])
-          if isinstance(handlerResponse, MultipartResponseIterator):
-            self.responsePartIterator = handlerResponse
-            handlerResponse = handlerResponse.getNextPart()
-            sendQueue.append([b'P'+struct.pack('<I', len(handlerResponse)), 0])
-          else:
-            sendQueue.append([b'R'+struct.pack('<I', len(handlerResponse)), 0])
-          sendQueue.append([handlerResponse, 0])
-        writeSelectFds = [self.outputFd]
-        self.remoteData = b''
-        self.remoteDataLength = -1
-        ioHandledFlag = True
-    return responseData
+          sendQueue.append([b'P'+struct.pack('<I', len(nextPart)), 0])
+          sendQueue.append([nextPart, 0])
+    else:
+      sendItem[1] = writeResult
+    if len(sendQueue) == 0:
+      del writeSelectFds[0]
 
 class JsonClientProtocolDataElementStream(ProtocolDataElementStream):
   """This is an implementation of the stream interface to work
@@ -897,6 +944,8 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
       raise Exception('Illegal state')
     (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
         bytes(json.dumps(['getPolicyInfo']), 'ascii'))
+    if inStreamReadingFlag:
+      raise Exception('Protocol error')
     return json.loads(str(responseData, 'ascii'))
 
   def startTransaction(self, queryData):
@@ -910,6 +959,8 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
       raise Exception('Illegal state')
     (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
         bytes(json.dumps(['startTransaction', queryData]), 'ascii'))
+    if inStreamReadingFlag:
+      raise Exception('Protocol error')
     if len(responseData) != 0:
       raise Exception('Unexpected response received')
 
@@ -922,6 +973,8 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
       raise Exception('Illegal state')
     (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
         bytes(json.dumps(['nextDataElement', wasStoredFlag]), 'ascii'))
+    if inStreamReadingFlag:
+      raise Exception('Protocol error')
     return json.loads(str(responseData, 'ascii'))
 
   def getDataElementInfo(self):
@@ -934,6 +987,8 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
       raise Exception('Illegal state')
     (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
         bytes(json.dumps(['getDataElementInfo']), 'ascii'))
+    if inStreamReadingFlag:
+      raise Exception('Protocol error')
     result = json.loads(str(responseData, 'ascii'))
     result[1] = BackupElementMetainfo.unserialize(
         bytes(result[1], 'ascii'))
@@ -985,12 +1040,16 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
     if not self.inStreamReadingFlag:
       raise Exception('Illegal state')
     responseData = None
-    responseId = None
+    inStreamReadingFlag = None
     if startStreamFlag:
-      (responseData, responseId) = self.streamMultiplexer.sendRequest(
+      (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
           bytes(json.dumps(['getDataElementStream']), 'ascii'))
+      if not inStreamReadingFlag:
+        raise Exception('Protocol error')
     else:
-      (responseData, responseId) = self.streamMultiplexer.handleRequests(1000)
+      (responseData, inStreamReadingFlag) = self.streamMultiplexer.handleRequests(1000)
+      if inStreamReadingFlag != (len(responseData) != 0):
+        raise Exception('Protocol error')
     if len(responseData) == 0:
 # So this was the final chunk, switch to normal non-stream mode again.
       self.inStreamReadingFlag = False
@@ -1003,14 +1062,14 @@ class JsonStreamClientProtocolAdapter(ClientProtocolInterface):
 # This is an exception to the normal client/server protocol: send
 # the abort request even while the current request is still being
 # processed.
-    (responseData, responseId) = self.streamMultiplexer.sendRequest(
+    (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(
         bytes(json.dumps(['abortDataElementStream']), 'ascii'))
 # Now continue reading until all buffers have drained and final
 # data chunk was removed.
     while len(self.internalReadDataStream()) != 0:
       pass
 # Now read the response to the abort command itself.
-    (responseData, responseId) = self.streamMultiplexer.sendRequest(None)
+    (responseData, inStreamReadingFlag) = self.streamMultiplexer.sendRequest(None)
     if len(responseData) != 0:
       raise Exception('Unexpected response received')
 
@@ -1058,7 +1117,8 @@ class JsonStreamServerProtocolRequestHandler():
     elif requestMethod == 'getDataElementInfo':
       elementInfo = self.serverProtocolAdapter.getDataElementInfo()
 # Meta information needs separate serialization, do it.
-      responseData = (elementInfo[0], str(elementInfo[1].serialize(), 'ascii'), elementInfo[2])
+      if elementInfo != None:
+        responseData = (elementInfo[0], str(elementInfo[1].serialize(), 'ascii'), elementInfo[2])
     elif requestMethod == 'getDataElementStream':
       responseData = WrappedFileStreamMultipartResponseIterator(
           self.serverProtocolAdapter.getDataElementStream())
