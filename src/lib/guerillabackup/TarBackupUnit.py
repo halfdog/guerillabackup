@@ -214,22 +214,23 @@ class TarBackupUnitDescription:
     if result[0] <= 0:
       return result
 
-    lastOffset = currentTime-self.lastAnyBackupTime
-    if self.incBackupTiming[2] is None:
+    if self.incBackupTiming != None:
+      lastOffset = currentTime-self.lastAnyBackupTime
+      if self.incBackupTiming[2] is None:
 # Normal minimum, maximum timing mode.
-      delta = self.incBackupTiming[0]-lastOffset
-      if delta < result[0]:
-        result = (delta, 'inc')
-    else:
-      delta = self.incBackupTiming[3]-(currentTime%self.incBackupTiming[2])
-      if delta < 0:
-        delta += self.incBackupTiming[2]
-      if delta+lastOffset < self.incBackupTiming[0]:
-        delta += self.incBackupTiming[2]
-      if delta+lastOffset > self.incBackupTiming[1]:
-        delta = self.incBackupTiming[1]-lastOffset
-      if delta < result[0]:
-        result = (delta, 'inc')
+        delta = self.incBackupTiming[0]-lastOffset
+        if delta < result[0]:
+          result = (delta, 'inc')
+      else:
+        delta = self.incBackupTiming[3]-(currentTime%self.incBackupTiming[2])
+        if delta < 0:
+          delta += self.incBackupTiming[2]
+        if delta+lastOffset < self.incBackupTiming[0]:
+          delta += self.incBackupTiming[2]
+        if delta+lastOffset > self.incBackupTiming[1]:
+          delta = self.incBackupTiming[1]-lastOffset
+        if delta < result[0]:
+          result = (delta, 'inc')
     return result
 
   def getBackupCommand(self, backupType, indexPathname):
