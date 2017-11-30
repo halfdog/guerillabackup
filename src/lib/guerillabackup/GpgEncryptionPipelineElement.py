@@ -31,7 +31,7 @@ class GpgEncryptionPipelineElement(
     return OSProcessPipelineExecutionInstance(
         self.callArguments[0],
         self.callArguments+['--hidden-recipient', self.keyName],
-        upstreamProcessOutput)
+        upstreamProcessOutput, allowedExitStatusList=[0])
 
   def replaceKey(self, newKeyName):
     """Return an encryption element with same gpg invocation arguments
