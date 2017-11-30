@@ -549,9 +549,10 @@ class StreamRequestResponseMultiplexer():
   * 'A' for aborting a running streaming request.
   * 'S' for sending a request to the remote side server interface
   * 'P' for stream response parts before receiving a final 'R'
-    packet. There has to be at least a single 'P package for a
-    stream response, even when that packet has zero size. The
-    final 'R' packet has always to be of zero size.
+    packet. Thus a 'P' packet identifies a stream response. Therefore
+    for zero byte stream responses, there has to be at least a
+    single 'P' package of zero zero size. The final 'R' packet
+    at the end of the stream has to be always of zero size.
   * 'R' for the remote response packet containing the response
     data.
   Any exception due to protocol violations, multiplex connection
