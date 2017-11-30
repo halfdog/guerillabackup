@@ -406,6 +406,7 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
 
     indexFilenamePrefix = None
     indexFilePathname = None
+    nextIndexFileName = None
     if tarUnitDescription.incBackupTiming != None:
 # We will have to create an index, open the index directory at
 # first.
@@ -488,8 +489,10 @@ class TarBackupUnit(guerillabackup.SchedulableGeneratorUnitInterface):
     try:
       guerillabackup.runTransformationPipeline(pipelineInstances)
     except:
-# Just cleanup the incomplete index file.
-      os.unlink(nextIndexFileName, dir_fd=persistencyDirFd)
+# Just cleanup the incomplete index file when incremental mode
+# was requested.
+      if not nextIndexFileName is None:
+        os.unlink(nextIndexFileName, dir_fd=persistencyDirFd)
       raise
 
     digestData = pipelineInstances[-1].getDigestData()
