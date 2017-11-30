@@ -62,6 +62,11 @@ except:
   traceback.print_tb(sys.exc_info()[2])
   sys.exit(1)
 
+# Make stdout, stderr unbuffered to avoid data lingering in buffers
+# when output is piped to another program.
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 1)
+sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', 1)
+
 # Initialize the storage.
 storageDirName = mainConfig.get('TransferServiceStorageBaseDir', None)
 if storageDirName is None:
