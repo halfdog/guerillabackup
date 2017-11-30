@@ -123,8 +123,16 @@ class TarBackupUnitDescription:
       elif configKey == 'Root':
         self.backupRoot = configValue
       elif configKey == 'Include':
+        if not (isinstance(configValue, list) or
+            isinstance(configValue, tuple)):
+          raise Exception(
+              'Parameter %s has to be list or tuple' % configKey)
         self.backupIncludeList = configValue
       elif configKey == 'Exclude':
+        if not (isinstance(configValue, list) or
+            isinstance(configValue, tuple)):
+          raise Exception(
+              'Parameter %s has to be list or tuple' % configKey)
         self.backupExcludeList = configValue
       elif configKey == 'IgnoreBackupRaces':
         self.ignoreBackupRacesFlag = configValue
