@@ -26,7 +26,7 @@
       <author>
        <firstname>&dhfirstname;</firstname>
         <surname>&dhsurname;</surname>
-        <contrib>Wrote this manpage.</contrib>
+        <contrib>Wrote this manual page.</contrib>
         <address>
           <email>&dhemail;</email>
         </address>
@@ -72,7 +72,7 @@
     invoke them and write the created backup data stream to the
     data sink, usually the file system. The generator supports
     generation of encrypted backups, management of information
-    about the backuped element, adds hashes to support detection
+    about the backed-up element, adds hashes to support detection
     of missing and manipulated backups. With that functions, confidentiality
     and integrity can be protected, also providing non-repudiation
     features.</para>
@@ -110,9 +110,9 @@
           <para>The units directory contains the enabled backup
           data generation units. To enable a unit, a symbolic
           link to the unit definition file has to be created.
-          The name of the symlink has to consist only of letters
-          and numbers. For example, to enable LogfileBackupUnit
-          for logfile archiving, one could use
+          The name of the symbolic link has to consist only of
+          letters and numbers. For example, to enable LogfileBackupUnit
+          for log-file archiving, one could use
           "ln -s -- /usr/lib/guerillabackup/lib/guerillabackup/LogfileBackupUnit.py LogfileBackupUnit".</para>
           <para>For units with an associated configuration file
           named "[unitname].config", configuration parameters
@@ -122,7 +122,7 @@
           configuration files.</para>
           <para>It is also possible to link a the same unit definition
           file more than once using different symbolic link names.
-          Usuallly this only makes sense when each of those units
+          Usually this only makes sense when each of those units
           has a different unit configuration file.</para>
         </listitem>
       </varlistentry>

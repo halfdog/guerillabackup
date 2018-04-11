@@ -26,7 +26,7 @@
       <author>
        <firstname>&dhfirstname;</firstname>
         <surname>&dhsurname;</surname>
-        <contrib>Wrote this manpage.</contrib>
+        <contrib>Wrote this manual page.</contrib>
         <address>
           <email>&dhemail;</email>
         </address>
