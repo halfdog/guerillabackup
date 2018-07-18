@@ -24,6 +24,11 @@ were created.
 
 ls -alR -- "${tmpDir}/data"
 
+To test data corruption handling, append a byte to one of the
+data files.
+
+echo "corrupted!" >> "${tmpDir}/data/.....data"
+
 
 TransferService invocation:
 ===========================
