@@ -87,14 +87,46 @@ after the checks.
 Policy Based Data Synchronization:
 ==================================
 
-* TransferAgent:
+To support various requirements, e.g. decentraliced backup generation
+with secure secure spooling, asynchronous transfers, a the "TransferService",
+a component for synchronization is required, see "doc/Design.txt"
+section "Synchronization" for design information.
 
-This class provides the core functionality for in and outbound
-transfers. It has a single sender or receiver transfer policy
-or both attached. Protocol connections are attached to it using
-a ConnectorService. The agent does not care about authentication
-any more: everything relevant for authorization has to be provided
-by the ConnectorService and stored to the TransferContext.
+The implementaion of "TransferService" orchestrates all components
+required related to following functional blocks:
+
+* ConnectorService: This service provides functions to establish
+  connectivity to other "TransferService" instances. Currently
+  only "SocketConnectorService" together with protocol handler
+  "JsonStreamServerProtocolRequestHandler" is supported. The
+  service has to care about authentication and basic service
+  access authorization.
+
+* Policies: Policies define, how the "TransferService" should
+  interact with other "TransferService" instances. There are
+  two types of policies, "ReceiverTransferPolicy" for incoming
+  transfers and "SenderTransferPolicy" for transmitting data.
+  See "ReceiverStoreDataTransferPolicy", "SenderMoveDataTransferPolicy",
+  for currently supported policies.
+
+* Storage: A storage to store, fetch and delete StorageBackupDataElements.
+  Some storages may support storing of custom annotation data
+  per element. This can then be used in policies to perform policy
+  decisions, e.g. to priotise sending of files according to tags.
+  Current storage implementation is "DefaultFileStorage".
+
+* TransferAgent: The agent keeps track of all current connections
+  created via the ConnectorService. It may control load balancing
+  between multiple connections. Current available agent implementation
+  is "SimpleTransferAgent".
+
+
+Classes and interfaces:
+
+* ClientProtocolInterface:
+
+Classes implementing this interface are passed to the TransferAgent
+by the ConnectorService to allow outbound calls to the other agent.
 
 * ConnectorService:
 
@@ -103,10 +135,21 @@ TransferAgent. Implementation will vary depending on underlying
 protocol, e.g. TCP, socket, ... and authentication type, which
 is also handled by the ConnectorService.
 
-* ClientProtocolInterface:
+* DefaultFileStorage:
 
-Classes implementing this interface are passed to the TransferAgent
-by the ConnectorService to allow outbound calls to the other agent.
+This storage implementation stores all relevant information on
+the filesystem, supporting locking and extra attribute handling.
+It uses the element name to create the storage file names, appending
+"data", "info" or "lock" to it for content, meta information
+storage and locking. Extra attribute data is stored in by using
+the attribute name as file extension. Thus extensions from above
+but also ones containing dashes or dots are not allowed.
+
+* JsonStreamServerProtocolRequestHandler:
+
+This handler implements a minimalistic JSON protocol to invoke
+ServerProtocolInterface methods. See "doc/Design.txt" section
+"Transmission protocol" for protocol design information.
 
 * ReceiverStoreDataTransferPolicy:
 
@@ -122,16 +165,41 @@ This is the common superinterface of all receiver transfer policies.
 This is the server side protocol adapter to be provided to the
 transfer service to forward remote requests to the local SenderPolicy.
 
-* SenderMoveDataTransferPolicy:
+* SenderMoveDataTransferPolicy(SenderTransferPolicy):
 
 This is a simple sender transfer policy just advertising all resources
 for transfer and removing them or marking them as transfered as
 soon as remote side confirms sucessful transfer. A file with a
 mark will not be offered for download any more.
+  * applyPolicy(): deletes the file when transfer was successful.
 
 * SenderTransferPolicy:
 
 This is the common superinterface of all sender side transfer
-policies. A policy implementation has perform internal consistency
-checks after data modification as needed, the applyPolicy call
-is only to notify policy about state changes due to transfers.
+policies. A policy implementation may require to adjust the internal
+state after data was transfered.
+  * queryBackupDataElements(): return an iterator over all elements
+    eligible for transfer by the current policy. The query may
+    support remote side supplied query data for optimization.
+    This should of course only be used when the remote side knows
+    the policy.
+  * applyPolicy(): update internal state after data transfer
+    was rejected, attempted or even successful.
+
+* SocketConnectorService:
+
+This is currently the only ConnectorService available. It accepts
+incoming connections on a local UNIX socket. Authentication and
+socket access authorization has to be handled UNIX permissions
+or integration with other tools, e.g. "socat". For each incoming
+connection it uses a "JsonStreamServerProtocolRequestHandler"
+protocol handler.
+
+* TransferAgent:
+
+This class provides the core functionality for in and outbound
+transfers. It has a single sender or receiver transfer policy
+or both attached. Protocol connections are attached to it using
+a ConnectorService. The agent does not care about authentication
+any more: everything relevant for authorization has to be provided
+by the ConnectorService and stored to the TransferContext.

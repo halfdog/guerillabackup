@@ -288,6 +288,14 @@ Design:
   * Transmission protocol: For interaction between the components,
     a minimalistic transmission protocol shall be used.
     * The protocol implementation shall be easily replaceable.
+    * The default JSON protocol implementation only forwards
+      data to ServerProtocolInterface implementation. Each request
+      is just a list with method name to call, the remaining
+      list items are used as call arguments. The supported method
+      names are the same as in ServerProtocolInterface interface.
+      As sending of large JSON responses is problematic, the
+      protocol supports multipart responses, sending chunks of
+      data.
 
 * BackupGenerator:
   * The generator can write to a single but configurable sink,
