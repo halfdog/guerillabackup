@@ -535,9 +535,19 @@ class MultipartResponseIterator():
   be used, where the response is too large for a single response
   data block or where means for interruption of an ongoing large
   response are needed."""
+
   def getNextPart(self):
-    """Get the next part from this iterator.
+    """Get the next part from this iterator. After detecting
+    that no more parts are available or calling release(), the
+    caller must not attempt to invoke the method again.
     @return the part data or None when no more parts are available."""
+    raise Exception('Interface method called')
+
+  def release(self):
+    """This method releases all resources associated with this
+    iterator if the iterator end was not yet reached in getNextPart().
+    All future calls to getNextPart() or release() will cause
+    exceptions."""
     raise Exception('Interface method called')
 
 
@@ -637,6 +647,12 @@ class StreamRequestResponseMultiplexer():
     """Close this multiplexer by closing also all underlying streams."""
     if self.inputFd == -1:
       raise Exception('Already closed')
+# We were currently transfering stream parts when being shutdown.
+# Make sure to release the iterator to avoid resource leaks.
+    if self.responsePartIterator != None:
+      self.responsePartIterator.release()
+      self.responsePartIterator = None
+
     pendingException = None
     try:
       os.close(self.inputFd)
@@ -862,6 +878,8 @@ class StreamRequestResponseMultiplexer():
         nextPart = self.responsePartIterator.getNextPart()
         if nextPart is None:
           sendQueue.append([b'R\x00\x00\x00\x00', 0])
+# Just remove the iterator, all resources were already released
+# in the getNextPart() method.
           self.responsePartIterator = None
         else:
           sendQueue.append([b'P'+struct.pack('<I', len(nextPart)), 0])
@@ -1084,12 +1102,28 @@ class WrappedFileStreamMultipartResponseIterator(MultipartResponseIterator):
     self.chunkSize = chunkSize
 
   def getNextPart(self):
-    """Get the next part from this iterator.
+    """Get the next part from this iterator. After detecting
+    that no more parts are available or calling release(), the
+    caller must not attempt to invoke the method again.
     @return the part data or None when no more parts are available."""
+    if self.streamFd < 0:
+      raise Exception('Illegal state')
     readData = os.read(self.streamFd, self.chunkSize)
     if len(readData) == 0:
+# This is the end of the stream, we can release it.
+      self.release()
       return None
     return readData
+
+  def release(self):
+    """This method releases all resources associated with this
+    iterator if the iterator end was not yet reached in getNextPart().
+    All future calls to getNextPart() or release() will cause
+    exceptions."""
+    if self.streamFd < 0:
+      raise Exception('Illegal state')
+    os.close(self.streamFd)
+    self.streamFd = -1
 
 
 class JsonStreamServerProtocolRequestHandler():
