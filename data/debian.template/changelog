@@ -1,3 +1,26 @@
+guerillabackup (0.0.1) unstable; urgency=low
+
+  * Fixes from Debian mentors review process
+    * Removed postrm script template
+    * Changed Debian package section from misc to extra
+    * Moved file/directory permission setting changes from postinst
+      to package building rules
+    * Manpage text corrections after spellchecking
+  * Features:
+    * Python 2 to 3 transition applying pylint for coding style
+      and syntax error detection, code refactoring
+    * Enforce gnupg encryption exit status check
+  * Bugfixes:
+    * Improved IO-handling to external processes during shutdown
+    * Improved transfer protocol error handling
+    * Disable console output buffering when not operating on TTYs
+    * Improved tar backup error status handling, cleanup
+    * Handle broken full/inc backup timing configuration gracefully
+    * Close file descriptors after file transfer or on shutdown
+      due to protocol errors
+
+ -- halfdog <me@halfdog.net>  Thu, 19 Jul 2018 20:57:00 +0000
+
 guerillabackup (0.0.0) unstable; urgency=low
 
   * Initial packaging of guerillabackup
