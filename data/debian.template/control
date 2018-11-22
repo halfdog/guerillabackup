@@ -3,7 +3,7 @@ Section: misc
 Priority: extra
 Maintainer: halfdog <me@halfdog.net>
 Build-Depends: debhelper (>= 9.0.0), dh-python, dh-systemd, docbook-xsl, docbook-xml, xsltproc
-Standards-Version: 3.9.8
+Standards-Version: 4.1.4
 Homepage: https://github.com/halfdog/guerillabackup
 Vcs-Git: https://github.com/halfdog/guerillabackup.git
 Vcs-Browser: https://github.com/halfdog/guerillabackup
