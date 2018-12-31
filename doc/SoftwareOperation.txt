@@ -1,0 +1,165 @@
+Introduction:
+=============
+
+This document deals with software operation after initial installation,
+e.g. regarding:
+
+* Analyze system failures, restoring operation
+* Using archives and backups
+
+
+Using archives and backups:
+===========================
+
+* Restoring backups:
+
+WORD OF WARNING: If you are planning to restore backups "free-handed"
+(without any defined, written, validated and trained operation
+procedures), using this software is most likely inefficient and
+risky and you might search for another solution. Otherwise this
+section gives you hints what should be considered when defining
+your own backup procedures.
+
+NOTE: Future releases may contain written procedures for some
+common use cases, so that only selection of relevant use cases,
+validation and training needs to be done by you or your organization.
+
+General procedure:
+
+To restore data you have to unwind all steps performed during
+backup generation. As GuerillaBackup is a toolchain with nearly
+unlimited flexibility in backup generation, processing and transfer
+procedures, those "unwinding" procedures might be very special
+for your system and cannot be covered here. When running a setup
+following many recommendations from the installation guideline,
+those steps should be considered:
+
+1) Locate the (one) storage of the backup to restore
+2) Validate backup integrity with (suspected) adversaries
+3) Decrypt the data if encrypted
+4) Unpack the data to a storage system for that type of data
+5) Merge the data according to data type, validate result
+
+
+* 1) Locate the (one) storage of the backup to restore:
+
+In distributed setups, "TransferService" (see man page) will
+have synchronized the backups between one or more storages according
+to the transfer policies in place. In small environments you
+might be able to locate the data checking your configuration.
+On larger setups relevant (transfer-, retention-, access- ...)
+policy and data location should be stored in your configuration
+management database that was also used for automated installation
+of the guerillabackup system.
+
+As backup data retrieval is a security critical step, you should
+also consider links to you ISMS here. Theft of backup data might
+be easier than stealing data from the live-systems, e.g. by fooling
+the system operator performing the restore procedure.
+
+The name of the backup storage files depends on your configuration.
+With the example configuration from the installation guide, just
+a simple tar-backup of the file system root is generated. With
+the default storage module, a pair of files exists for each backup
+timepoint, e.g.
+
+20181220083942-root-full.data
+20181220083942-root-full.info
+
+These files are usually located in "/var/lib/guerillabackup/data"
+by default. When using incremental backups, you usually will need
+to collect all following "-inc.(data|info)" files up to the restore
+point you want to reach.
+
+
+* 2) Validate backup integrity with (suspected) adversaries:
+
+There are two types of data integrity violations possible:
+
+  * The backup data file itself contains corrupted data violating
+    the data type specification, e.g. an invalid compression format.
+
+  * The data itself is not corrupted on format level (so it can
+    be restored technically) but its content was modified and
+    does not match the data on the source system at the given
+    timepoint.
+
+The first issue can be addressed by checking the ".info" file
+(a simple JSON file) and compare the "StorageFileChecksumSha512"
+value with the checksum of the ".data" file.
+
+If you are considering attacks on your backup system, the later
+data integrity violation can only be detected checking the synteny
+of all your backup archive. Therefore the "Predecessor" checksum
+field from the ".info" file can be used. Manipulation of a single
+backup archive will break the chain at that point. The attacker
+would have to manipulate also all ".info" files from that position
+on to create a consistent picture at least on the backup storage
+system.
+
+As the ".info" files are small, a paranoid configuration should
+also send them to off-site locations where at least the last
+version of each backup source can be retrieved for comparison.
+
+Currently the guerilla package does not yet contain a tool for
+those different data integrity validation procedures. You may
+want to check "Design.txt", section "Metainformation files" on
+how to create a small tool for yourself.
+
+* 3) Decrypt the data if encrypted:
+
+With the GnuPG plugin, data is encrypted using the public key
+configured during installation. As backup data archives might
+be way too large to quickly decrypt them to intermediate storage
+during restore and because unencrypted content should only be
+seen by the target system operating on that data, not the backup
+or some intermediate system (data leakage prevention), thus streaming
+the encrypted data to the target system and decryption on the
+target should be the way to go. When playing it safe, the private
+key for decryption is stored on a hardware token and cannot (and
+should never) be copied to the target system.
+
+For that use-case GnuPG provides the feature of "session-key-extraction".
+It is sufficient to decrypt only the first few kB of the backup
+archive using "--show-session-key" on the machine holding the
+PKI-token. On the target system corresponding "--override-session-key"
+option allows to decrypt the backup data stream on the fly as
+it arives. Refer to you gnupg documentation for more information.
+
+So the data receiving pipeline on the data target system might
+look somethink like
+
+[backup data receive/retrieve command] |
+gpg "--override-session-key [key]" --decrypt |
+[backup data specific restore/merge command(s) - see below]
+
+
+* 4) Unpack the data to a storage system for that type of data:
+
+To unpack the data you need to apply an opposite command than
+the one you configured to create the backup data, e.g. "pg_restore"
+vs "pg_dump".
+
+The same is true for tar-backups created by the recommended
+configuration from the installation guide. On a full backup with
+default "bzip2" compression usually this will suite most:
+
+... data strem souce] | tar -C [mergelocation] --numeric-owner -xj
+
+  * mergelocation: when the target system is "hot" during restore
+    (other processes accessing files might be active) or complex
+    data merging is required, data should never be extracted to
+    final location immediately due to data quality and security
+    risks.
+
+With incremental backups the "...-full.data" file has to be extracted
+first, followed by all incremental data files.
+
+See "tar" manual pages for more information.
+
+
+* 5) Merge the data according to data type, validate result:
+
+These are the fine arts of system operators maintaining highly
+reliable systems and clearly out of scope of this document. Make
+a plan, write it down, validate it, train your staff.

@@ -36,7 +36,11 @@ free or commercial backup solution:
 
 # Documentation:
 
-* doc/Design.txt: GuerillaBackup design documentation 
+* doc/Design.txt: GuerillaBackup design documentation
 * doc/Implementation.txt: GuerillaBackup implementation documentation
 * doc/Installation.txt: GuerillaBackup end user installation
   documentation
+* Manual pages: doc/BackupGenerator.1.xml and doc/TransferService.1.xml
+  here on github, usually "man (BackupGenerator|TransferService)"
+  when installed from package repository
+* doc/FAQs.txt: GuerillaBackup frequently asked questions

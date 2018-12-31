@@ -10,6 +10,23 @@ mkdir -m 0700 -p /etc/guerillabackup/units /var/lib/guerillabackup/data /var/lib
 cp -aT src /usr/lib/guerillabackup
 
 
+General GuerillaBackup Configuration:
+=====================================
+
+All tools require a general configuration file, which usually
+is identical for backup generation and transfer. The default
+location is "/etc/guerillabackup/config". It can be derived from
+"/etc/guerillabackup/config.template".
+
+The file contains configuration paramers that influence the behavior
+of various backup elements, e.g. source units, sinks or the generator
+itself. All those parameters start with "General" to indicate
+their global relevance.
+
+See "/etc/guerillabackup/config.template" template file for extensive
+comments regarding each parameter.
+
+
 Configuration of BackupGenerator:
 =================================
 

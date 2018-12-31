@@ -1,0 +1,98 @@
+Introduction:
+=============
+
+This document contains questions already asked regarding GuerillaBackup.
+Each entry gives only an introductory answer and references to
+core documentation regarding the question.
+
+
+Questions regarding whole software suite:
+=========================================
+
+* Q: When should I use GuerillaBackup?
+
+A: Use it when you want to craft a backup toolchain fulfilling
+special needs of your environment. Use it when you know, that
+you just cannot simply "make backups and restore them" in a highly
+complex distributed system as done with a notebook and a USB backup
+drive. Therefore you most likely have performed thourough risk
+analysis, developed mitigation strategies, derived backup and
+recovery plans. And now you need a flexible toolchain to be
+configured according your specification and integrated into your
+software ecosystem, most likely using fully automated installation
+(e.g. ansible) and operation.
+
+Do NOT use it if you are looking for a 3-click graphical solution
+to synchronize your notebook desktop data to another location
+every some weeks or so.
+
+
+* Q: How do I restore backups?
+
+A: Sarkastic answer: "exactly the one validated way you defined
+in your backup plans and standard operating procedures".
+Realistic answer: most likely you will have configured a simple
+tar backup during installation that might be also encrypted using
+the GnuPG encryption example. See "SoftwareOperation.txt" for
+some answers regarding restore procedures.
+
+
+BackupGenerator:
+================
+
+* Q: Where do I find generated archives and backups?
+
+A: When using only "BackupGenerator" without any transfers configured
+(see "TransferService"), you will find them at the sink location
+you configured when creating your generator configuration. Starting
+from a default configuration, you will usually use a file system
+sink storing to "/var/lib/guerillabackup/data". See "BackupGenerator"
+man page on general generator configuration and configuration
+sections in "/usr/share/doc/guerillabackup/Installation.txt".
+
+
+* Q: What are the PGP keys for, who maintains them?
+
+A: Backup storages contain all the valuable data from various backup
+sources thus are a very interesting target for data theft. Therefore
+e.g. backup storage media (disks, tapes) have to be tracked, then
+wiped and destroyed to prevent data leakage. GuerillaBackup supports
+public key encryption at the source, thus an attack on the central
+storage system or theft of storage media cannot reveal any relevant
+information to the adversary. This makes e.g. backup media handling
+easier and thus more secure, reduces costs. You could even synchronize
+your backups to the cloud without relevant data leakage risks. The
+private key is required only to restore backups and should be kept
+safe, even offline at the best.
+
+To use this feature, enable the "GeneralDefaultEncryptionElement"
+from "/etc/guerillabackup/config.template" (see template for more
+information). Define your protection levels, generate the required
+keys and install them where needed.
+
+
+TransferService:
+================
+
+* Q: How do both sides authenticate?
+
+A: According specification "TransferService" implementation creates
+an UNIX domain socket which can be protected by standard means.
+In default configuration it can only be accessed by user root.
+To grant access to that socket remotely use the very same techniques
+and tools you use for other network services also. Quite useful is
+e.g. to forward the UNIX domain socket via SSH both on interactive
+or non-interactive connections (depends on your use case, see
+man "ssh", "-L" option) or use "socat UNIX-CONNECT:... OPENSSL"
+to use PKI/certificate based access control and data encryption.
+See "TransferService" man page for more information.
+
+
+* Q: Which network protocols are supported?
+
+A: "TransferService" requires bidirectional communication but
+does not aim to reimplement all the high-quality network communication
+tools out there already. Instead it provides means to easily
+integrate your preferred tools for network tunneling, network
+access control. See "Q: How do both sides authenticate?" for
+more information.
