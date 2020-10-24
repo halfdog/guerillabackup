@@ -200,12 +200,21 @@ class TarBackupUnitDescription:
     lastOffset = currentTime-self.lastFullBackupTime
     result = (self.fullBackupTiming[1]-lastOffset, 'full')
     if self.fullBackupTiming[2] != None:
+# This is the delta to the previous (negative) or next (positive)
+# preferred timepoint.
       delta = self.fullBackupTiming[3]-(currentTime%self.fullBackupTiming[2])
       if delta < 0:
+# Add default modulo value if preferred backup timepoint is in
+# the past.
         delta += self.fullBackupTiming[2]
       if delta+lastOffset < self.fullBackupTiming[0]:
+# If time from last backup to next preferred time is below minimum,
+# then add again the default modulo value. Most likely this will
+# increase the backup time to be above the maximum backup interval.
         delta += self.fullBackupTiming[2]
       if delta+lastOffset > self.fullBackupTiming[1]:
+# If time from last backup to next preferred time is above maximum,
+# use the maximum interval to calculate a new delta.
         delta = self.fullBackupTiming[1]-lastOffset
       if delta < result[0]:
         result = (delta, 'full')
