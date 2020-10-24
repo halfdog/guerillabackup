@@ -2,7 +2,6 @@ src/* usr/lib/guerillabackup
 data/etc/* etc/guerillabackup
 data/init/systemd/guerillabackup-generator.service lib/systemd/system
 data/init/systemd/guerillabackup-transfer.service lib/systemd/system
-doc/Changelog.txt usr/share/doc/guerillabackup
 doc/Design.txt usr/share/doc/guerillabackup
 doc/Implementation.txt usr/share/doc/guerillabackup
 doc/Installation.txt usr/share/doc/guerillabackup
