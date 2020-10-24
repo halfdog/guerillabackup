@@ -8,6 +8,7 @@ import select
 import socket
 import struct
 import sys
+import threading
 import time
 
 import guerillabackup
@@ -351,8 +352,25 @@ class ReceiverStoreDataTransferPolicy(ReceiverTransferPolicy):
 class TransferAgent():
   """The TransferAgent keeps track of all currently open transfer
   contexts and orchestrates transfer."""
+
   def addConnection(self, transferContext):
     """Add a connection to the local agent."""
+    raise Exception('Interface method called')
+
+  def shutdown(self, forceShutdownTime=-1):
+    """Trigger shutdown of this TransferAgent and all open connections
+    established by it. The method call shall return as fast as
+    possible as it might be invoked via signal handlers, that
+    should not be blocked. If shutdown requires activities with
+    uncertain duration, e.g. remote service acknowledging clean
+    shutdown, those tasks shall be performed in another thread,
+    e.g. the main thread handling the connections.
+    @param forceShutdowTime when 0 this method will immediately
+    end all service activity just undoing obvious intermediate
+    state, e.g. deleting temporary files, but will not notify
+    remote side for a clean shutdown or wait for current processes
+    to complete. A value greater zero indicates the intent to
+    terminate within that given amount of time."""
     raise Exception('Interface method called')
 
 
@@ -363,12 +381,19 @@ class SimpleTransferAgent(TransferAgent):
 
   def __init__(self):
     """Create the local agent."""
-    pass
+    self.singletonContext = None
+    self.lock = threading.Lock()
 
   def addConnection(self, transferContext):
     """Add a connection to the local transfer agent. As this agent
     is only single threaded, the method will return only after
     this connection was closed already."""
+    with self.lock:
+      if self.singletonContext is not None:
+        raise Exception(
+            '%s cannot handle multiple connections in parallel' % (
+                self.__class__.__name__))
+      self.singletonContext = transferContext
     try:
       if not self.ensurePolicyCompliance(transferContext):
         print('Incompatible policies detected, shutting down', file=sys.stderr)
@@ -388,6 +413,8 @@ class SimpleTransferAgent(TransferAgent):
         raise
     finally:
       transferContext.clientProtocolAdapter.forceShutdown()
+      with self.lock:
+        self.singletonContext = None
 
   def ensurePolicyCompliance(self, transferContext):
     """Check that remote sending policy is compliant to local
@@ -399,6 +426,27 @@ class SimpleTransferAgent(TransferAgent):
       return policyInfo is None
     return transferContext.receiverTransferPolicy.isSenderPolicyCompatible(
         policyInfo)
+
+  def shutdown(self, forceShutdownTime=-1):
+    """Trigger shutdown of this TransferAgent and all open connections
+    established by it.
+    @param forceShutdowTime when 0 this method will immediately
+    end all service activity just undoing obvious intermediate
+    state, e.g. deleting temporary files, but will not notify
+    remote side for a clean shutdown or wait for current processes
+    to complete. A value greater zero indicates the intent to
+    terminate within that given amount of time."""
+    transferContext = None
+    with self.lock:
+      if self.singletonContext is None:
+        return
+      transferContext = self.singletonContext
+
+    if forceShutdownTime == 0:
+# Immedate shutdown was requested.
+      transferContext.clientProtocolAdapter.forceShutdown()
+    else:
+      transferContext.offerShutdown()
 
 
 class DefaultTransferAgentServerProtocolAdapter(ServerProtocolInterface):
@@ -1185,7 +1233,13 @@ class SocketConnectorService():
     self.senderTransferPolicy = senderTransferPolicy
     self.localStorage = localStorage
     self.transferAgent = transferAgent
+# The local socket to accept incoming connections. The only place
+# to close the socket is in the shutdown method to avoid concurrent
+# close in main loop.
     self.socket = None
+    self.isRunningFlag = False
+    self.shutdownFlag = False
+
     self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
       self.socket.bind(self.socketPath)
@@ -1197,18 +1251,29 @@ class SocketConnectorService():
       self.socket.bind(self.socketPath)
 
     os.chmod(self.socketPath, 0x180)
-    self.isRunningFlag = False
 
   def run(self):
     """Run this connector service. The method will not return until
     shutdown is requested by another thread."""
-    if self.socket is None:
-      raise Exception('Already shutdown')
+# Keep a local copy of the server socket to avoid races with
+# asynchronous shutdown signals.
     serverSocket = self.socket
+    if self.shutdownFlag or (serverSocket is None):
+      raise Exception('Already shutdown')
+
     self.isRunningFlag = True
     serverSocket.listen(4)
-    while self.isRunningFlag:
-      (clientSocket, remoteAddress) = serverSocket.accept()
+    while not self.shutdownFlag:
+      clientSocket = None
+      remoteAddress = None
+      try:
+        (clientSocket, remoteAddress) = serverSocket.accept()
+      except OSError as acceptError:
+        if (acceptError.errno != errno.EINVAL) or (not self.shutdownFlag):
+          print(
+              'Unexpected error %s accepting new connections' % acceptError,
+              file=sys.stderr)
+        continue
       transferContext = TransferContext(
           'socket', self.receiverTransferPolicy,
           self.senderTransferPolicy, self.localStorage)
@@ -1227,16 +1292,30 @@ class SocketConnectorService():
           JsonStreamClientProtocolAdapter(streamMultiplexer),
           serverProtocolAdapter)
       self.transferAgent.addConnection(transferContext)
-
-  def shutdown(self):
-    """Shutdown this connector service and all open connections
-    established by it."""
     self.isRunningFlag = False
+
+  def shutdown(self, forceShutdownTime=-1):
+    """Shutdown this connector service and all open connections
+    established by it. This method is usually called by a signal
+    handler as it will take down the whole service including all
+    open connections. The method might be invoked more than once
+    to force immediate shutdown after a previous attempt with
+    timeout did not complete yet.
+    @param forceShutdowTime when 0 this method will immediately
+    end all service activity just undoing obvious intermediate
+    state, e.g. deleting temporary files, but will not notify
+    remote side for a clean shutdown or wait for current processes
+    to complete. A value greater zero indicates the intent to
+    terminate within that given amount of time."""
 # Close the socket. This will also interrupt any other thread
-# in run method.
-    self.socket.close()
-    self.socket = None
-    os.unlink(self.socketPath)
+# in run method if it was currently waiting for new connections.
+    if not self.shutdownFlag:
+      self.socket.shutdown(socket.SHUT_RDWR)
+      os.unlink(self.socketPath)
+      self.socketPath = None
+
+# Indicate main loop termination on next possible occasion.
+    self.shutdownFlag = True
+
 # Shutdown all open connections.
-    raise Exception('No connection shutdown yet')
-#   self.socketPath = None
+    self.transferAgent.shutdown(forceShutdownTime)
