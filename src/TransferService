@@ -15,94 +15,130 @@ sys.path = sys.path[1:] + ['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/l
 
 import errno
 import os
+import signal
 
 import guerillabackup
 from guerillabackup.DefaultFileStorage import DefaultFileStorage
 from guerillabackup.Transfer import SimpleTransferAgent
 from guerillabackup.Transfer import SocketConnectorService
 
-def createPolicy(config, classNameKey, initArgsKey):
-  """Create a policy with given keys."""
-  policyClass = config.get(classNameKey, None)
-  if policyClass is None:
-    return None
-  policyInitArgs = config.get(initArgsKey, None)
-  if policyInitArgs is None:
-    return policyClass(config)
-  policyInitArgs = [config]+policyInitArgs
-  return policyClass(*policyInitArgs)
 
+class TransferApplicationContext():
+  def __init__(self):
+    """Initialize this application context without loading any
+    configuration. That has to be done separately e.g. by invoking
+    initFromSysArgs."""
+    self.serviceConfigFileName = '/etc/guerillabackup/config'
+    self.mainConfig = None
+    self.connectorService = None
+    self.forceShutdownFlag = False
 
-serviceConfigFileName = '/etc/guerillabackup/config'
+  def initFromSysArgs(self):
+    """This method initializes the application context from the
+    system command line arguments but does not run the service
+    yet. Any errors during initialization will cause the program
+    to be terminated."""
+    argPos = 1
+    while argPos < len(sys.argv):
+      argName = sys.argv[argPos]
+      argPos += 1
+      if not argName.startswith('--'):
+        print('Invalid argument "%s"' % argName, file=sys.stderr)
+        sys.exit(1)
+      if argName == '--Config':
+        self.serviceConfigFileName = sys.argv[argPos]
+        argPos += 1
+        continue
+      print('Unknown parameter "%s"' % argName, file=sys.stderr)
+      sys.exit(1)
 
-argPos = 1
-while argPos < len(sys.argv):
-  argName = sys.argv[argPos]
-  argPos += 1
-  if not argName.startswith('--'):
-    print('Invalid argument "%s"' % argName, file=sys.stderr)
-    sys.exit(1)
-  if argName == '--Config':
-    serviceConfigFileName = sys.argv[argPos]
-    argPos += 1
-    continue
-  print('Unknown parameter "%s"' % argName, file=sys.stderr)
-  sys.exit(1)
+    if not os.path.exists(self.serviceConfigFileName):
+      print('Configuration file %s does not exist' % (
+          repr(self.serviceConfigFileName),), file=sys.stderr)
+      sys.exit(1)
+    self.mainConfig = {}
+    try:
+      self.mainConfig = {'guerillabackup': guerillabackup}
+      guerillabackup.execConfigFile(
+          self.serviceConfigFileName, self.mainConfig)
+    except:
+      print('Failed to load configuration %s' % (
+          repr(self.serviceConfigFileName),), file=sys.stderr)
+      import traceback
+      traceback.print_tb(sys.exc_info()[2])
+      sys.exit(1)
 
-if not os.path.exists(serviceConfigFileName):
-  print('Configuration file %s does not exist' % repr(serviceConfigFileName), file=sys.stderr)
-  sys.exit(1)
-mainConfig = {}
-try:
-  mainConfig = {'guerillabackup': guerillabackup}
-  guerillabackup.execConfigFile(serviceConfigFileName, mainConfig)
-except:
-  print('Failed to load configuration %s' % repr(serviceConfigFileName), file=sys.stderr)
-  import traceback
-  traceback.print_tb(sys.exc_info()[2])
-  sys.exit(1)
+  def createPolicy(self, classNameKey, initArgsKey):
+    """Create a policy with given keys."""
+    policyClass = self.mainConfig.get(classNameKey, None)
+    if policyClass is None:
+      return None
+    policyInitArgs = self.mainConfig.get(initArgsKey, None)
+    if policyInitArgs is None:
+      return policyClass(self.mainConfig)
+    policyInitArgs = [self.mainConfig]+policyInitArgs
+    return policyClass(*policyInitArgs)
 
+  def startService(self):
+    """This method starts the transfer service."""
 # Make stdout, stderr unbuffered to avoid data lingering in buffers
 # when output is piped to another program.
-sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 1)
-sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', 1)
+    sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 1)
+    sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', 1)
 
 # Initialize the storage.
-storageDirName = mainConfig.get('TransferServiceStorageBaseDir', None)
-if storageDirName is None:
-  storageDirName = mainConfig.get(
-      guerillabackup.DefaultFileSystemSink.SINK_BASEDIR_KEY, None)
-if storageDirName is None:
-  print('No storage configured, use configuration key "%s"' % (
-      guerillabackup.DefaultFileSystemSink.SINK_BASEDIR_KEY),
-        file=sys.stderr)
-  sys.exit(1)
-if not os.path.isdir(storageDirName):
-  print('Storage directory %s does not exist or is inaccessible' % repr(storageDirName),
-        file=sys.stderr)
-  sys.exit(1)
+    storageDirName = self.mainConfig.get('TransferServiceStorageBaseDir', None)
+    if storageDirName is None:
+      storageDirName = self.mainConfig.get(
+          guerillabackup.DefaultFileSystemSink.SINK_BASEDIR_KEY, None)
+    if storageDirName is None:
+      print('No storage configured, use configuration key "%s"' % (
+          guerillabackup.DefaultFileSystemSink.SINK_BASEDIR_KEY),
+            file=sys.stderr)
+      sys.exit(1)
+    if not os.path.isdir(storageDirName):
+      print('Storage directory %s does not exist or is inaccessible' % repr(storageDirName),
+            file=sys.stderr)
+      sys.exit(1)
 
-storage = DefaultFileStorage(storageDirName, mainConfig)
-transferAgent = SimpleTransferAgent()
-runtimeDataDirPathname = guerillabackup.getRuntimeDataDirPathname(mainConfig)
+    storage = DefaultFileStorage(storageDirName, self.mainConfig)
+    transferAgent = SimpleTransferAgent()
+    runtimeDataDirPathname = guerillabackup.getRuntimeDataDirPathname(
+        self.mainConfig)
+    receiverPolicy = self.createPolicy(
+        guerillabackup.TRANSFER_RECEIVER_POLICY_CLASS_KEY,
+        guerillabackup.TRANSFER_RECEIVER_POLICY_INIT_ARGS_KEY)
+    senderPolicy = self.createPolicy(
+        guerillabackup.TRANSFER_SENDER_POLICY_CLASS_KEY,
+        guerillabackup.TRANSFER_SENDER_POLICY_INIT_ARGS_KEY)
 
-receiverPolicy = createPolicy(
-    mainConfig,
-    guerillabackup.TRANSFER_RECEIVER_POLICY_CLASS_KEY,
-    guerillabackup.TRANSFER_RECEIVER_POLICY_INIT_ARGS_KEY)
-senderPolicy = createPolicy(
-    mainConfig,
-    guerillabackup.TRANSFER_SENDER_POLICY_CLASS_KEY,
-    guerillabackup.TRANSFER_SENDER_POLICY_INIT_ARGS_KEY)
+    try:
+      os.mkdir(runtimeDataDirPathname, 0o700)
+    except OSError as mkdirError:
+      if mkdirError.errno != errno.EEXIST:
+        raise
 
-try:
-  os.mkdir(runtimeDataDirPathname, 0x1c0)
-except OSError as mkdirError:
-  if mkdirError.errno != errno.EEXIST:
-    raise
+    self.connectorService = SocketConnectorService(
+        os.path.join(runtimeDataDirPathname, 'transfer.socket'),
+        receiverPolicy, senderPolicy, storage, transferAgent)
 
-connectorService = SocketConnectorService(
-    os.path.join(runtimeDataDirPathname, 'transfer.socket'),
-    receiverPolicy, senderPolicy, storage, transferAgent)
+    signal.signal(signal.SIGINT, self.shutdown)
+    signal.signal(signal.SIGHUP, self.shutdown)
+    signal.signal(signal.SIGTERM, self.shutdown)
+    self.connectorService.run()
 
-connectorService.run()
+  def shutdown(self, signum, frame):
+    """This function triggers shutdown of the service. By default
+    when invoked for the first time, the method will still wait
+    10 seconds for any ongoing operations to complete. When invoked
+    twice that will trigger immediate service shutdown."""
+    forceShutdownTime = 10
+    if self.forceShutdownFlag:
+      forceShutdownTime = 0
+    self.connectorService.shutdown(forceShutdownTime=forceShutdownTime)
+    self.forceShutdownFlag = True
+
+
+applicationContext = TransferApplicationContext()
+applicationContext.initFromSysArgs()
+applicationContext.startService()
