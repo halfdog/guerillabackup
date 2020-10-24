@@ -25,6 +25,21 @@ free or commercial backup solution:
 * operate under stable conditions with solid network, sufficient
   storage, trust between both backup data source and sink
 
+# Getting started:
+
+For those just wanting to get started quickly, following trail
+might be the best:
+
+* Build (see "Building" below) the software or install the binary
+  package from file ("dpkg -i guerillabackup_[version]_all.deb")
+  or repository ("apt-get install guerillabackup".
+* Follow the steps from "doc/Installation.txt", section "General
+  GuerillaBackup Configuration".
+* If not everything is fine yet, see "doc/FAQs.txt" to see if
+  your problem is already known.
+* If still not working, please file a bug/feature request at github,
+  see "Resources" section below.
+
 # Building:
 
 * Build a native Debian test package using the default template:
