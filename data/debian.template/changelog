@@ -1,12 +1,13 @@
-guerillabackup (0.0.2~rc0) unstable; urgency=low
+guerillabackup (0.0.2) unstable; urgency=low
 
   * Fixes:
     * Fixed wrong full tar backup interval defaults in template
   * Features:
     * Added TransferService clean shutdown on [Ctrl]-C
   * Misc:
+    * Applied lintian/pylint suggestions
 
- -- halfdog <me@halfdog.net>  Sat, 24 Oct 2020 10:42:00 +0000
+ -- halfdog <me@halfdog.net>  Sat, 24 Oct 2020 11:08:00 +0000
 
 guerillabackup (0.0.1) unstable; urgency=low
 
