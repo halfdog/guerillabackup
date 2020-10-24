@@ -1,3 +1,12 @@
+guerillabackup (0.0.2~rc0) unstable; urgency=low
+
+  * Fixes:
+    * Fixed wrong full tar backup interval defaults in template
+  * Features:
+  * Misc:
+
+ -- halfdog <me@halfdog.net>  Sat, 24 Oct 2020 10:12:00 +0000
+
 guerillabackup (0.0.1) unstable; urgency=low
 
   * Fixes from Debian mentors review process

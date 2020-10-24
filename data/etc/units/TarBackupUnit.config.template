@@ -48,7 +48,7 @@ TarBackupUnitConfigList = {}
 #   'Exclude': ['./proc', './sys', './var/lib/guerillabackup/data'],
 #   'IgnoreBackupRaces': False,
 # Schedule one root directory full backup every week.
-#   'FullBackupTiming': [20*3600, (7*24+4)*3600, 7*24*3600, 0],
+#   'FullBackupTiming': [(7*24-4)*3600, (7*24+4)*3600, 7*24*3600, 0],
 # Create a daily incremental backup when machine is up.
 #   'IncBackupTiming': [20*3600, 28*3600, 24*3600, 0],
 #   'Policy': 'default', 'EncryptionKey': None}
