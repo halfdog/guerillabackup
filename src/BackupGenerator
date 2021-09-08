@@ -58,6 +58,9 @@ backupSinkClass = mainConfig.get(
     'GeneratorSinkClass', guerillabackup.DefaultFileSystemSink)
 backupSink = backupSinkClass(mainConfig)
 
+# Get the default condition for running any unit when ready.
+defaultUnitRunCondition = mainConfig.get('DefaultUnitRunCondition', None)
+
 # Now search the unit directory and load all units that should
 # be scheduled.
 unitList = []
@@ -114,11 +117,17 @@ while True:
     nextInvocationTime = min(nextInvocationTime, unitInvocationTime)
 
   if len(immediateUnitList) != 0:
-    for unit in immediateUnitList:
-      unit.invokeUnit(backupSink)
+    if (defaultUnitRunCondition is not None) and \
+        (defaultUnitRunCondition.evaluate()):
+      for unit in immediateUnitList:
+        unit.invokeUnit(backupSink)
 # Clear the next invocation time, we do not know how long we spent
 # inside the scheduled units.
-    nextInvocationTime = 0
+      nextInvocationTime = 0
+    else:
+# The unit is ready but the condition was not met. Evaluate the
+# conditions again in 10 seconds.
+      nextInvocationTime = 10
 
   if nextInvocationTime > 0:
     time.sleep(nextInvocationTime)

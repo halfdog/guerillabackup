@@ -60,6 +60,16 @@
 # as source to copy or move backup data to an offsite location.
 DefaultFileSystemSinkBaseDir = '/var/lib/guerillabackup/data'
 
+# This parameter defines the conditions that have to be met to
+# run any backup unit. The settings is intended to avoid running
+# units at unfavorable times, e.g. during machine maintenance,
+# immediately during boot time high CPU/disk activity but also
+# when there is abnormally high load on the machine. When the
+# condition is not met yet it will be reevaluated at the next
+# scheduler run, usually some seconds later.
+# DefaultUnitRunCondition = guerillabackup.LogicalAndCondition([
+#   guerillabackup.MinPowerOnTimeCondition(600),
+#   guerillabackup.AverageLoadLimitCondition(0.5, 240)])
 
 # Unit specific default and specific settings can be found in
 # the units directory.
