@@ -1,3 +1,10 @@
+guerillabackup (0.1.0) unstable; urgency=low
+
+  * Features:
+    * Added flexible backup generator run condition support
+
+ -- halfdog <me@halfdog.net>  Sun,  5 Sep 2021 18:31:00 +0000
+
 guerillabackup (0.0.2) unstable; urgency=low
 
   * Fixes:
