@@ -2,29 +2,36 @@ Source: guerillabackup
 Section: misc
 Priority: optional
 Maintainer: halfdog <me@halfdog.net>
-Build-Depends: debhelper (>= 9.0.0), dh-python, dh-systemd, docbook-xsl, docbook-xml, xsltproc
-Standards-Version: 4.1.4
+Build-Depends: debhelper (>= 13.0.0), debhelper-compat (=13), dh-python, docbook-xsl, docbook-xml, python3, xsltproc
+Standards-Version: 4.5.0
+Rules-Requires-Root: no
 Homepage: https://github.com/halfdog/guerillabackup
 Vcs-Git: https://github.com/halfdog/guerillabackup.git
 Vcs-Browser: https://github.com/halfdog/guerillabackup
 
 Package: guerillabackup
 Architecture: all
-Depends: ${python3:Depends}, ${misc:Depends}
+Depends: python3, ${misc:Depends}
 Description: resilient, distributed backup and archiving solution
- The tool supports asynchronous, local-coordinated, distributed
- secure backup generation, forwarding, verification, storage
- and deletion even in rugged environments. The system is open
- to integration of own code. The codebase is very small and
- kept simple to ease auditing.
+ GuerillaBackup is a backup solution for tailoring special purpose
+ backup data flows, e.g. in rugged environments, with special legal
+ constraints (privacy regulations, cross border data storage), need
+ for integration of custom data processing, auditing or quality
+ assurance code. It is kept small to ease code audits and does
+ not attempt to duplicate features, stable and trusted high quality
+ encryption, networking or storage solutions already provide. So
+ for example it can be integrated with your choice of trusted transports
+ (ssh, SSL, xmpp, etc.) to transfer backups to other nodes according
+ to predefined or custom transfer policies. GuerillaBackup ensures
+ security by encrypting data at source and only this key can be
+ used to decrypt the data.
  .
- Unlike business backup solutions, guerillabackup also considers
- following conditions that might be encountered with private use:
- * infrastructure uptime below 99%, e.g. machines not always powered
- * poor network connectivity, e.g. mobile access, parallel video
-   streaming
- * poor physical access and anti-theft protection of machines
- * no security monitoring of machines
+ WARNING: If you are familiar with GDPR, ITIL-service-strategy/design
+ ISO-27k, ... this software will allow you to create custom solutions
+ fulfilling your needs for high quality, legally sound backup and
+ archiving data flows. If you do NOT run production with those
+ (or similar terms) in mind, you should look out for something
+ else.
  .
  See /usr/share/doc/guerillabackup/Design.txt.gz section "Requirements"
  for more information.

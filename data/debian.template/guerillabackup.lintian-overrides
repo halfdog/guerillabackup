@@ -1,5 +1,3 @@
 # We use a non-standard dir permission to prohibit any non-root
 # user to access keys or data by default.
 guerillabackup binary: non-standard-dir-perm
-# The description really contains a list.
-guerillabackup binary: possible-unindented-list-in-extended-description
