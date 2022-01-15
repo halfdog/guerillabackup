@@ -117,7 +117,9 @@ while True:
     nextInvocationTime = min(nextInvocationTime, unitInvocationTime)
 
   if len(immediateUnitList) != 0:
-    if (defaultUnitRunCondition is not None) and \
+# Really run the tasks when there was no condition defined or
+# the condition is met.
+    if (defaultUnitRunCondition is None) or \
         (defaultUnitRunCondition.evaluate()):
       for unit in immediateUnitList:
         unit.invokeUnit(backupSink)
