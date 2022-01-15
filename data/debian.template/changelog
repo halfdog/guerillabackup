@@ -1,3 +1,10 @@
+guerillabackup (0.1.1) unstable; urgency=low
+
+  * Bugfixes:
+    * Correct handling of undefined start condition
+
+ -- halfdog <me@halfdog.net>  Sat, 15 Jan 2022 08:56:30 +0000
+
 guerillabackup (0.1.0) unstable; urgency=low
 
   * Features:
