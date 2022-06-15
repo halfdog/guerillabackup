@@ -53,8 +53,7 @@
   </refmeta>
   <refnamediv>
     <refname>TransferService</refname>
-    <refpurpose>Tool to synchronize guerillabackup backup data
-    storages.</refpurpose>
+    <refpurpose>Synchronize guerillabackup backup data storages</refpurpose>
   </refnamediv>
   <refsynopsisdiv>
     <cmdsynopsis>
@@ -139,6 +138,8 @@
           TransferReceiverPolicyClass, TransferReceiverPolicyInitArgs,
           TransferSenderPolicyClass, TransferSenderPolicyInitArgs.</para>
         </listitem>
+      </varlistentry>
+      <varlistentry>
         <term><filename>/var/run/guerillabackup/transfer.socket</filename></term>
         <listitem>
           <para>This is the default socket file name to connect
