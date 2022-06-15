@@ -1,3 +1,14 @@
+guerillabackup (0.2.0) unstable; urgency=low
+
+  Features:
+  * Added StorageTool to check storage data status, currently
+    only checking for invalid file names in the storage directory.
+  Bugfixes:
+  * Improved TransferService error messages and formatting mistake
+    in man page.
+
+ -- halfdog <me@halfdog.net>  Wed, 15 Jun 2022 07:57:19 +0000
+
 guerillabackup (0.1.1) unstable; urgency=low
 
   * Bugfixes:
