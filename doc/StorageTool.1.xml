@@ -1,0 +1,137 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN"
+"http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd" [
+  <!-- Fill in your name for FIRSTNAME and SURNAME. -->
+  <!ENTITY dhfirstname "halfdog">
+  <!ENTITY dhsurname   "">
+  <!-- dhusername could also be set to "&dhfirstname; &dhsurname;". -->
+  <!ENTITY dhusername  "halfdog">
+  <!ENTITY dhemail     "me@halfdog.net">
+  <!-- SECTION should be 1-8, maybe w/ subsection other parameters are
+       allowed: see man(7), man(1) and
+       http://www.tldp.org/HOWTO/Man-Page/q2.html. -->
+  <!ENTITY dhsection   "1">
+  <!-- TITLE should be something like "User commands" or similar (see
+       http://www.tldp.org/HOWTO/Man-Page/q2.html). -->
+  <!ENTITY dhtitle     "StorageTool User Manual">
+  <!ENTITY dhucpackage "STORAGETOOL">
+  <!ENTITY dhpackage   "guerillabackup">
+]>
+
+<refentry>
+  <refentryinfo>
+    <title>&dhtitle;</title>
+    <productname>&dhpackage;</productname>
+    <authorgroup>
+      <author>
+       <firstname>&dhfirstname;</firstname>
+        <surname>&dhsurname;</surname>
+        <contrib>Wrote this manual page.</contrib>
+        <address>
+          <email>&dhemail;</email>
+        </address>
+      </author>
+    </authorgroup>
+    <copyright>
+      <year>2022</year>
+      <holder>&dhusername;</holder>
+    </copyright>
+    <legalnotice>
+      <para>This manual page was written for guerillabackup system
+        on Linux systems, e.g. Debian.</para>
+      <para>Permission is granted to copy, distribute and/or modify this
+        document under the terms of the Lesser GNU General Public
+        License, Version 3.</para>
+      <para>On Debian systems, the complete text of the Lesser
+        GNU General Public License can be found in
+        <filename>/usr/share/common-licenses/LGPL-3</filename>.</para>
+    </legalnotice>
+  </refentryinfo>
+  <refmeta>
+    <refentrytitle>STORAGETOOL</refentrytitle>
+    <manvolnum>&dhsection;</manvolnum>
+  </refmeta>
+  <refnamediv>
+    <refname>StorageTool</refname>
+    <refpurpose>Manage guerillabackup backup data storages</refpurpose>
+  </refnamediv>
+  <refsynopsisdiv>
+    <cmdsynopsis>
+      <command>StorageTool</command>
+      <!-- These are several examples, how syntaxes could look -->
+      <arg choice="plain"><option>--Config <replaceable>file</replaceable></option></arg>
+    </cmdsynopsis>
+  </refsynopsisdiv>
+  <refsect1 id="description">
+    <title>DESCRIPTION</title>
+    <para>This is the manual page for the <command>StorageTool</command>
+      command. The tool is used to perform operations on backup
+      file storage locations as used by <command>BackupGenerator</command>
+      or <command>TransferService</command> to store backup data.</para>
+    <para>Currently the tool only supports checking storage file
+    naming to identify incomplete backups due to aborts during
+    backup generation or transfer e.g. by reboots or crashes.
+    To ignore files for a reason, e.g. notes, add entries to
+    the status file, e.g.</para>
+    <para>"Readme.txt": {"Ignore": null}</para>
+  </refsect1>
+  <refsect1 id="options">
+    <title>OPTIONS</title>
+    <variablelist>
+      <varlistentry>
+        <term><option>--Config <replaceable>file</replaceable></option></term>
+        <listitem>
+          <para>This optional parameter specifies an alternative
+          configuration file instead of /etc/guerillabackup/storage-tool-config.json.
+          </para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+  <refsect1 id="files">
+    <title>FILES</title>
+    <variablelist>
+      <varlistentry>
+        <term><filename>/etc/guerillabackup/storage-tool-config.json</filename></term>
+        <listitem>
+          <para>The default configuration file for StorageTool
+          tool. Use storage-tool-config.json.template to create
+          it. The template also contains the documentation for
+          each available parameter. The most relevant parameters
+          for StorageTool are DataDir, Include and Status.</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><filename>/var/lib/guerillabackup/state/storage-tool-status.json</filename></term>
+        <listitem>
+          <para>This is the recommended location for the toplevel
+          StorageTool status file. The file has to contain valid
+          JSON data but also comment lines starting with #. The
+          JSON data has to be a dictionary with file names relative
+          to the storage-tool-config.json data directory. A status
+          file only ignoring a single data file wii look like:</para>
+          <para>
+{"Readme.txt": {"Ignore": null}}</para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+  </refsect1>
+  <refsect1 id="bugs">
+    <title>BUGS</title>
+    <para>
+      For guerillabackup setups installed from packages, e.g.
+      .deb or .rpm files usually installed via package management
+      software, e.g. apt-get, aptitude, rpm, yast, please report
+      bugs to the package maintainer.</para>
+    <para>
+      For setups from unpackaged software trunk, please report
+      at <ulink url="https://github.com/halfdog/guerillabackup/issues"/>.</para>
+  </refsect1>
+  <refsect1 id="see_also">
+    <title>SEE ALSO</title>
+<!-- In alpabetical order. -->
+    <para>
+      <citerefentry><refentrytitle>TransferService</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+    </para>
+  </refsect1>
+</refentry>

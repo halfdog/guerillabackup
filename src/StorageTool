@@ -1,0 +1,273 @@
+#!/usr/bin/python3 -BEsStt
+"""This tool performs operations on a local data storage, at
+the moment only checking that all file names are sane, warning
+about unexpected files, e.g. from failed transfers."""
+
+import os
+import re
+import sys
+
+# Adjust the Python sites path to include only the guerillabackup
+# library addons, thus avoiding a large set of python site packages
+# to be included in code run with root privileges. Also remove
+# the local directory from the site path.
+sys.path = sys.path[1:]+['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib-enabled']
+
+import guerillabackup
+
+
+class PolicyIgnore():
+  """This policy just defines that a file should be ignored."""
+
+  POLICY_NAME = 'Ignore'
+
+  def __init__(self):
+    """Create the policy object without any parameters."""
+
+
+class StorageConfig():
+  """This class implements the configuration of a storage location."""
+
+  RESOURCE_NAME_REGEX = re.compile(
+      '^(?P<datetime>[0-9]{14,})-(?P<name>[0-9A-Za-z.-]+)-' \
+      '(?P<type>full|inc)\\.(?P<element>data|info)$')
+
+  def __init__(self, fileName, parentConfig):
+    """Create a storage configuration from a given file name.
+    @param fileName the filename where to load the storage configuration.
+    @param parentConfig this is the parent configuration that
+    included this configuration and therefor may also define
+    policies."""
+    self.configFileName = fileName
+    self.parentConfig = parentConfig
+    self.dataDir = None
+    self.storageStatusFileName = None
+    self.storageStatus = None
+    self.trackedResources = {}
+    self.includedConfigList = []
+    config = guerillabackup.Utils.jsonLoadWithComments(self.configFileName)
+    if not isinstance(config, dict):
+      raise Exception()
+    for configName, configData in config.items():
+      if configName == 'DataDir':
+        if not isinstance(configData, str):
+          raise Exception()
+        self.dataDir = self.canonicalizePathname(configData)
+        if not os.path.isdir(self.dataDir):
+          raise Exception(
+              'Data directory %s in configuration %s does ' \
+              'not exist or is not a directory' % (
+                  self.dataDir, self.configFileName))
+        continue
+      if configName == 'Include':
+        for includeFileName in configData:
+          includeFileName = self.canonicalizePathname(includeFileName)
+          if not os.path.isfile(includeFileName):
+            raise Exception(
+                'Included configuration %s in configuration %s ' \
+                'does not exist or is not a file' % (
+                    includeFileName, self.configFileName))
+          try:
+            includedConfig = StorageConfig(includeFileName, self)
+            self.includedConfigList.append(includedConfig)
+          except:
+            print(
+                'Failed to load configuration "%s" included from "%s".' % (
+                    includeFileName, self.configFileName),
+                file=sys.stderr)
+            raise
+        continue
+      if configName == 'Status':
+        if not isinstance(configData, str):
+          raise Exception()
+        self.storageStatusFileName = self.canonicalizePathname(configData)
+        if os.path.exists(self.storageStatusFileName):
+          if not os.path.isfile(self.storageStatusFileName):
+            raise Exception('Status file "%s" has to be file' % configData)
+          self.storageStatus = guerillabackup.Utils.jsonLoadWithComments(
+              self.storageStatusFileName)
+        continue
+      raise Exception('Invalid configuration section "%s"' % configName)
+
+  def getConfigFileName(self):
+    """Get the name of the file defining this configuration."""
+    return self.configFileName
+
+  def canonicalizePathname(self, pathname):
+    """Canonicalize a pathname which might be a name relative
+    to the configuration file directory or a noncanonical absolute
+    path."""
+    if not os.path.isabs(pathname):
+      pathname = os.path.join(os.path.dirname(self.configFileName), pathname)
+    return os.path.realpath(pathname)
+
+  def getDataDirectoryRelativePath(self, pathname):
+    """Get the pathname of a file relative to the data directory.
+    @param pathname the absolute path name to resolve."""
+    return os.path.relpath(pathname, self.dataDir)
+
+  def initializeStorage(self, storageFileDict):
+    """Initialize the storage by locating all files in this data
+    storage directory and also apply already known status information."""
+# Walk the data directory to include any files not included yet.
+    for dirName, subDirs, subFiles in os.walk(self.dataDir):
+      for fileName in subFiles:
+        fileName = os.path.join(dirName, fileName)
+        fileInfo = storageFileDict.get(fileName, None)
+        if fileInfo is not None:
+          refConfig = fileInfo.getConfig()
+          if self.dataDir == refConfig.dataDir:
+            raise Exception(
+                'Data directory "%s" part of at least two ' \
+                '(included) configurations' % self.dataDir)
+          if (not self.dataDir.startswith(refConfig.dataDir)) or \
+              (self.dataDir[len(refConfig.dataDir)] != '/'):
+            raise Exception(
+                'Directory tree inconsistency due to logic ' \
+                'error or concurrent (malicious) modifictions')
+# Add the file and reference to this configuration or override
+# a less specific previous one.
+        storageFileDict[fileName] = StorageFileInfo(self)
+
+# Now load included configuration data.
+    for includeConfig in self.includedConfigList:
+      includeConfig.initializeStorage(storageFileDict)
+
+    if self.storageStatus is not None:
+      for statusFile, statusData in self.storageStatus.items():
+        targetFileName = os.path.join(self.dataDir, statusFile)
+        if targetFileName not in storageFileDict:
+          raise Exception(
+              'Invalid status of nonexisting file "%s" ' \
+              'in data directory "%s"' % (
+                  statusFile, self.dataDir))
+        storageFileDict[targetFileName].initStatusData(statusData)
+
+
+  def detectResources(self, storageFileDict):
+    """Detect all valid resources managed by this configuration."""
+    for fileName, fileInfo in storageFileDict.items():
+      if fileInfo.getConfig() != self:
+        continue
+      relFileName = self.getDataDirectoryRelativePath(fileName)
+      nameStartPos = relFileName.rfind('/') + 1
+      match = StorageConfig.RESOURCE_NAME_REGEX.match(
+          relFileName[nameStartPos:])
+      if match is None:
+        if not fileInfo.hasStatusData(PolicyIgnore.POLICY_NAME):
+          print(
+              'File "%s" should be ignored by config "%s".' % (
+                  fileInfo.getConfig().getDataDirectoryRelativePath(fileName),
+                  fileInfo.getConfig().getConfigFileName()),
+              file=sys.stderr)
+        continue
+      resourceName = match.group('name')
+      if nameStartPos != 0:
+        resourceName = relFileName[:nameStartPos] + resourceName
+
+      if resourceName not in self.trackedResources:
+        self.trackedResources[resourceName] = []
+      self.trackedResources[resourceName].append(fileName)
+      fileInfo.setResourceGroup(self.trackedResources[resourceName])
+
+    for includeConfig in self.includedConfigList:
+      includeConfig.detectResources(storageFileDict)
+
+
+class StorageFileInfo():
+  """This class stores information about one file found in the
+  file data storage directory."""
+
+  def __init__(self, config):
+# This is the storage configuration authoritative for defining
+# the status and policy of this file.
+    self.config = config
+# This dictionary contains the policies applied to the file and
+# the policy status parameters.
+    self.statusData = None
+# This is the resource group this file belongs to.
+    self.resourceGroup = None
+
+  def getConfig(self):
+    """Get the authoritative configuration for this file."""
+    return self.config
+
+  def initStatusData(self, statusData):
+    """Initialize the status data."""
+    if self.statusData is not None:
+      raise Exception('Logic error')
+    self.statusData = statusData
+
+  def hasStatusData(self, policyName):
+    """Check if there is status data for a given policy."""
+    if self.statusData is None:
+      return False
+    return bool(policyName in self.statusData)
+
+  def getStatusData(self, policyName):
+    """Get the status data for a given policy."""
+    if self.statusData is None:
+      return None
+    return self.statusData.get(policyName, None)
+
+  def setResourceGroup(self, resourceGroup):
+    """Set the resource group this file belongs to."""
+    if self.resourceGroup is not None:
+      raise Exception('Logic error')
+    self.resourceGroup = resourceGroup
+
+
+class StorageTool():
+  """This class implements the storage tool main functions."""
+
+  def __init__(self):
+    """Create a StorageTool object with default configuration.
+    The object has to be properly initialized by loading configuration
+    data from files."""
+    self.configFileName = '/etc/guerillabackup/storage-tool-config.json'
+    self.config = None
+    self.storageFileDict = {}
+
+  def parseCommandLine(self):
+    """This function will parse command line arguments and update
+    settings before loading of configuration."""
+    if self.config is not None:
+      raise Exception('Cannot reload configuration')
+    argPos = 1
+    while argPos < len(sys.argv):
+      argName = sys.argv[argPos]
+      argPos += 1
+      if not argName.startswith('--'):
+        raise Exception('Invalid argument "%s"' % argName, file=sys.stderr)
+      if argName == '--Config':
+        self.configFileName = sys.argv[argPos]
+        argPos += 1
+        continue
+      raise Exception('Unknown parameter "%s"' % argName, file=sys.stderr)
+
+
+  def loadConfiguration(self):
+    """Load the configuration from the specified configuration file."""
+    if self.config is not None:
+      raise Exception('Cannot reload configuration')
+    self.config = StorageConfig(self.configFileName, None)
+
+  def initializeStorage(self):
+    """Initialize the storage by locating all files in data storage
+    directories and also apply already known status information."""
+    self.config.initializeStorage(self.storageFileDict)
+# Now detect all the valid resources and group them.
+    self.config.detectResources(self.storageFileDict)
+
+
+def main():
+  """This is the program main function."""
+  tool = StorageTool()
+  tool.parseCommandLine()
+  tool.loadConfiguration()
+# Now all recursive configurations are loaded. First initialize
+# the storage.
+  tool.initializeStorage()
+
+if __name__ == '__main__':
+  main()
