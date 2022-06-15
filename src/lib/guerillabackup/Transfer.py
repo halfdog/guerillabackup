@@ -705,13 +705,19 @@ class StreamRequestResponseMultiplexer():
     try:
       os.close(self.inputFd)
     except Exception as closeException:
-      print('Closing of input stream failed', file=sys.stderr)
+# Without any program logic errors, exceptions here are rare
+# and problematic, therefore report them immediately.
+      print(
+          'Closing of input stream failed: %s' % str(closeException),
+          file=sys.stderr)
       pendingException = closeException
     if self.outputFd != self.inputFd:
       try:
         os.close(self.outputFd)
       except Exception as closeException:
-        print('Closing of output stream failed', file=sys.stderr)
+        print(
+            'Closing of output stream failed: %s' % str(closeException),
+            file=sys.stderr)
         pendingException = closeException
     self.inputFd = -1
     self.outputFd = -1
