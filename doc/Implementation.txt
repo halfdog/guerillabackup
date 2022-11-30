@@ -203,3 +203,41 @@ or both attached. Protocol connections are attached to it using
 a ConnectorService. The agent does not care about authentication
 any more: everything relevant for authorization has to be provided
 by the ConnectorService and stored to the TransferContext.
+
+
+StorageTool:
+============
+
+The workflow described in "Design.txt" is implemented as such:
+
+* Load the master configuration and all included configurations:
+
+This really creates just the "StorageConfig" and validates that
+directories or files exist referenced by the configuration exist.
+It also loads the "StorageStatus" (if any) but does not validate
+any entries inside it.
+
+A subconfiguration is only loaded after initialization of the
+parent configuration was completed.
+
+See "StorageTool.loadConfiguration", "StorageConfig.__init__".
+
+* Locate the storage data and meta information files in each
+  configuration data directory:
+
+This step is done for the complete configuration tree with main
+configuration as root and all included subconfiguration branches
+and leafes. Starting with the most specific (leaf) configurations,
+all files in the data directory are listed, associated with the
+current configuration loading it. After processing of leafes
+the same is done for the branch configuration including the leafes,
+thus adding files not yet covered by the leafes and branches.
+
+When all available storage files are known, they are grouped
+into backup data elements (data and metadata) before grouping
+also elements from the same source.
+
+See "StorageTool.initializeStorage", "StorageConfig.initializeStorage".
+
+* Check for applicable but yet unused policy templates and apply 
+  them to files matching the selection pattern:

@@ -297,9 +297,60 @@ Design:
       protocol supports multipart responses, sending chunks of
       data.
 
-* BackupGenerator:
-  * The generator can write to a single but configurable sink,
-    thus enabling both local file storage but also remote fetch.
-  * It keeps track of the Schedulable Source Units.
-  * It provides configuration support to the source units.
-  * It provides persistency support to the source units.
+
+BackupGenerator Design:
+=======================
+
+* The generator can write to a single but configurable sink,
+  thus enabling both local file storage but also remote fetch.
+* It keeps track of the Schedulable Source Units.
+* It provides configuration support to the source units.
+* It provides persistency support to the source units.
+
+
+StorageTool Design:
+===================
+
+The tool checks and modifies a storage using this workflow:
+
+* Load the master configuration and all included configurations.
+
+* Locate the storage data and meta information files in each
+  configuration data directory.
+
+* Check for applicable but yet unused policy templates and apply
+  them to files matching the selection pattern.
+
+Following policies can be applied to each source:
+
+* Backup interval policy: this policy checks if full and incremental
+  backups are created and transfered with sane intervals between
+  each element and also in relation to current time (generated at
+  all).
+
+* Integrity policy: this policy checks that the hash value of
+  the backup data matches the one in the metadata and that all
+  metadata blocks are chained together appropriately, thus detecting
+  manipulation of backup data and metadata in the storage. (Not
+  implemented yet)
+
+* Retention policies: these policies check which backup data
+  elements should be kept and which ones could be pruned from
+  the storage to free space but also to comply with regulations
+  regarding data retention, e.g. GDPR. Such policies also interact
+  with the mechanisms to really delete the data without causing
+  inconsistencies in other policies, see below.
+
+
+From all policies the retention policies are special as they
+may release backup data elements still needed by other policies
+when checking compliance. So for example deleting elements will
+always break the integrity policy as it shall detect any modification
+of backup data by design. Therefore applying any policy is a
+two step process: first all policies are applied (checked) and
+retention policies may mark some elements for deletion. Before
+performing the deletion each policy is invoked again to extract
+any information from the to be deleted elements that the policy
+will need when applied again to the same storage after the elements
+were already deleted. Thus any storage state that was valid according
+to a policy will stay valid even after deletion of some elements.
