@@ -1,4 +1,7 @@
-src/* usr/lib/guerillabackup
+src/lib usr/lib/guerillabackup
+src/BackupGenerator usr/bin
+src/StorageTool usr/bin
+src/TransferService usr/bin
 data/etc/* etc/guerillabackup
 data/init/systemd/guerillabackup-generator.service lib/systemd/system
 data/init/systemd/guerillabackup-transfer.service lib/systemd/system
