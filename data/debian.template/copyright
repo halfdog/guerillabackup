@@ -1,5 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: guerillabackup
+Upstream-Contact: me@halfdog.net
 Source: https://github.com/halfdog/guerillabackup.git
 
 Files: *
