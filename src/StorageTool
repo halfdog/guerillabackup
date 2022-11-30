@@ -3,9 +3,12 @@
 the moment only checking that all file names are sane, warning
 about unexpected files, e.g. from failed transfers."""
 
+import datetime
+import json
 import os
 import re
 import sys
+import time
 
 # Adjust the Python sites path to include only the guerillabackup
 # library addons, thus avoiding a large set of python site packages
@@ -16,21 +19,518 @@ sys.path = sys.path[1:]+['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib
 import guerillabackup
 
 
-class PolicyIgnore():
-  """This policy just defines that a file should be ignored."""
+class Policy():
+  """This class defines a policy instance."""
 
-  POLICY_NAME = 'Ignore'
+  def __init__(self, resourceRegex, policyConfig):
+    """Instantiate this policy object from a JSON policy configuration
+    definition."""
+    if not isinstance(policyConfig, dict):
+      raise Exception(
+          'Policy configuration has to be a dictionary: %s' % (
+              repr(policyConfig)))
+    self.resourceRegex = resourceRegex
+    self.policyName = policyConfig['Name']
+    if not isinstance(self.policyName, str):
+      raise Exception('Policy name has to be a string')
+    self.policyPriority = policyConfig.get('Priority', 0)
+    if not isinstance(self.policyPriority, int):
+      raise Exception('Policy priority has to be an integer')
 
-  def __init__(self):
-    """Create the policy object without any parameters."""
+  def getPolicyName(self):
+    """Get the name of this policy."""
+    return self.policyName
+
+  def getPriority(self):
+    """Get the priority of this policy. A higher number indicates
+    that a policy has higher priority and shall override any
+    policies with lower or equal priority."""
+    return self.policyPriority
+
+  def isApplicableToSource(self, sourceName):
+    """Check if this policy is applicable to a given source."""
+    return self.resourceRegex.match(sourceName) is not None
+
+  def apply(self, sourceStatus):
+    """Apply this policy to a backup source status."""
+    raise Exception('Abstract method called')
+
+  def delete(self, sourceStatus):
+    """Delete the policy status data of this policy for all elements
+    marked for deletion and update status data of those elements
+    kept to allow validation even after deletion of some elements."""
+    raise Exception('Abstract method called')
+
+
+class PolicyTypeInterval(Policy):
+  """This policy type defines a policy checking file intervals
+  between full and incremental backups (if available).
+
+  Applying the policies will also use and modify following backup
+  data element status information fields:
+  * LastFull, LastInc: Timestamp of previous element in case
+    the element was deleted. Otherwise policy checks would report
+    policy failures when pruning data storage elements.
+  * Ignore: When set ignore interval policy violations of that
+    type, i.e. full, inc, both related to the previous backup
+    data element.
+  * Dead: When set, this source will not produce any more backups.
+    Therefore ignore any gap after this last backup and report
+    a policy violation if more backups are seen."""
+
+  POLICY_NAME = 'Interval'
+
+  def __init__(self, resourceRegex, policyConfig):
+    """Instantiate this policy object from a JSON policy configuration
+    definition."""
+    super().__init__(resourceRegex, policyConfig)
+    self.config = {}
+    self.timeFullMin = None
+    self.timeFullMax = None
+# This is the minimal time between incremental backups or None
+# if this source does not emit any incremental backups.
+    self.timeIncMin = None
+    self.timeIncMax = None
+
+    for configKey, configValue in policyConfig.items():
+      if configKey in ('Name', 'Priority'):
+        continue
+      self.config[configKey] = configValue
+      if configKey not in ('FullMax', 'FullMin', 'IncMax', 'IncMin'):
+        raise Exception('Unknown policy configuration setting "%s"' % configKey)
+
+      timeVal = None
+      if configValue is not None:
+        if not isinstance(configValue, str):
+          raise Exception(
+              'Policy setting "%s" has to be a string' % configKey)
+        timeVal = guerillabackup.Utils.parseTimeDef(configValue)
+      if configKey == 'FullMax':
+        self.timeFullMax = timeVal
+      elif configKey == 'FullMin':
+        self.timeFullMin = timeVal
+      elif configKey == 'IncMax':
+        self.timeIncMax = timeVal
+      else:
+        self.timeIncMin = timeVal
+
+# Validate the configuration settings.
+    if (self.timeFullMin is None) or (self.timeFullMax is None):
+      raise Exception()
+    if self.timeFullMin > self.timeFullMax:
+      raise Exception()
+    if self.timeIncMax is None:
+      if self.timeIncMin is not None:
+        raise Exception()
+    elif (self.timeIncMin > self.timeIncMax) or \
+        (self.timeIncMin > self.timeFullMin) or \
+        (self.timeIncMax > self.timeFullMax):
+      raise Exception()
+
+  def apply(self, sourceStatus):
+    """Apply this policy to a backup source status."""
+    elementList = sourceStatus.getDataElementList()
+    currentPolicy = None
+
+    lastElement = None
+    lastFullTime = None
+    lastIncTime = None
+    for elem in elementList:
+      policyData = elem.getPolicyData(PolicyTypeInterval.POLICY_NAME)
+      ignoreType = None
+      if policyData is not None:
+        for key in policyData.keys():
+          if key not in ('Config', 'Ignore', 'LastFull', 'LastInc'):
+            raise Exception(
+                'Policy status configuration of "%s" corrupted: %s' % (
+                    elem.getElementName(), repr(policyData)))
+
+        if 'LastFull' in policyData:
+          lastFullTime = policyData['LastFull']
+          lastIncTime = policyData['LastInc']
+        if 'Config' in policyData:
+# Use the additional policy data.
+          initConfig = dict(policyData['Config'])
+          initConfig['Name'] = PolicyTypeInterval.POLICY_NAME
+          currentPolicy = PolicyTypeInterval(None, initConfig)
+        ignoreType = policyData.get('Ignore', None)
+      if currentPolicy is None:
+# This is the first element and default policy data was not copied
+# yet.
+        elem.updatePolicyData(PolicyTypeInterval.POLICY_NAME, self.config)
+        currentPolicy = self
+      elemTime = elem.getDatetimeSeconds()
+      if lastFullTime is None:
+# This is the first element.
+        if elem.getType() != 'full':
+          print(
+              'Backup source %s starts with incremental ' \
+              'backups, storage might be corrupted.' % (
+                  sourceStatus.getSourceName()), file=sys.stderr)
+        lastFullTime = lastIncTime = elemTime
+      else:
+# Now check the time policy.
+        fullValidationOkFlag = False
+        if elem.getType() == 'full':
+          if ignoreType not in ('both', 'full'):
+            fullDelta = elemTime - lastFullTime
+            if fullDelta < currentPolicy.timeFullMin:
+              print(
+                  'Backup source %s emitting full backups ' \
+                  'faster than expected between "%s" and "%s".' % (
+                      sourceStatus.getSourceName(),
+                      lastElement.getElementName(),
+                      elem.getElementName()), file=sys.stderr)
+            elif fullDelta > currentPolicy.timeFullMax:
+              print(
+                  'Backup source "%s" full interval too big ' \
+                  'between "%s" and "%s".' % (
+                      sourceStatus.getSourceName(),
+                      lastElement.getElementName(),
+                      elem.getElementName()), file=sys.stderr)
+              print(
+                  'No interactive/automatic policy or ' \
+                  'status update, consider adding this ' \
+                  'manually to the status in %s:\n%s' % (
+                      sourceStatus.getStorageStatus().getStatusFileName(),
+                      json.dumps(
+                          {elem.getElementName(): {'Interval': {'Ignore': 'full'}}}, indent=2)
+                  ), file=sys.stderr)
+            else:
+              fullValidationOkFlag = True
+          lastFullTime = elemTime
+        else:
+# This is an incremental backup, so incremental interval policy
+# has to be defined.
+          if currentPolicy.timeIncMin is None:
+            raise Exception('Not expecting incremental backups')
+
+# Always perform incremental checks if there is a policy for
+# it.
+        if (currentPolicy.timeIncMin is not None) and \
+            (ignoreType not in ('both', 'inc')):
+          incDelta = elemTime - lastIncTime
+# As full backup scheduling overrides the lower priority incremental
+# schedule, that may have triggered a full backup while no incremental
+# would have been required yet.
+          if (incDelta < currentPolicy.timeIncMin) and \
+              (elem.getType() != 'full') and (not fullValidationOkFlag):
+            print(
+                'Backup source %s emitting inc backups ' \
+                'faster than expected between "%s" and "%s".' % (
+                    sourceStatus.getSourceName(),
+                    lastElement.getElementName(),
+                    elem.getElementName()), file=sys.stderr)
+          elif incDelta > currentPolicy.timeIncMax:
+            print(
+                'Backup source "%s" inc interval too big ' \
+                'between "%s" and "%s".' % (
+                    sourceStatus.getSourceName(),
+                    lastElement.getElementName(),
+                    elem.getElementName()), file=sys.stderr)
+            print(
+                'No interactive/automatic policy or ' \
+                'status update, consider adding this ' \
+                'manually to the status in %s:\n%s' % (
+                    sourceStatus.getStorageStatus().getStatusFileName(),
+                    json.dumps(
+                        {elem.getElementName(): {'Interval': {'Ignore': 'inc'}}}, indent=2)
+                ), file=sys.stderr)
+
+      lastElement = elem
+      lastIncTime = elemTime
+
+  def delete(self, sourceStatus):
+    """Prepare the policy status data for deletions going to
+    happen later on."""
+    elementList = sourceStatus.getDataElementList()
+
+    lastElement = None
+    lastFullTime = None
+    lastIncTime = None
+
+# Keep also track of the last persistent and the current policy.
+# When deleting an element with policy updates then move the
+# current policy data to the first element not deleted.
+    persistentPolicyConfig = currentPolicyConfig = self.config
+
+    for elem in elementList:
+      policyData = elem.getPolicyData(PolicyTypeInterval.POLICY_NAME)
+      if policyData is not None:
+        if 'LastFull' in policyData:
+          lastFullTime = policyData['LastFull']
+          lastIncTime = policyData['LastInc']
+        if 'Config' in policyData:
+          currentPolicyConfig = policyData['Config']
+          if not elem.isMarkedForDeletion():
+            persistentPolicyConfig = currentPolicyConfig
+
+      elemTime = elem.getDatetimeSeconds()
+      if lastFullTime is None:
+# This is the first element.
+        lastFullTime = lastIncTime = elemTime
+      else:
+        if (lastElement is not None) and \
+            (lastElement.isMarkedForDeletion()) and \
+            (not elem.isMarkedForDeletion()):
+# So the previous element is to be deleted but this not. Make
+# sure last timings are kept in policy data.
+          if policyData is None:
+            policyData = {}
+            elem.setPolicyData(PolicyTypeInterval.POLICY_NAME, policyData)
+          policyData['LastFull'] = lastFullTime
+          policyData['LastInc'] = lastIncTime
+# Also copy policy configuration if the element defining the
+# current policy was not persisted.
+          if persistentPolicyConfig != currentPolicyConfig:
+            policyData['Config'] = currentPolicyConfig
+            persistentPolicyConfig = currentPolicyConfig
+
+        if elem.getType() == 'full':
+          lastFullTime = elemTime
+      lastElement = elem
+      lastIncTime = elemTime
+
+
+class PolicyTypeLevelRetentionTagger():
+  """This is a helper class for PolicyTypeLevelRetention to tag
+  backup elements to be kept."""
+
+# This is the specification for calender based alignment. Each
+# tuple contains the name and the offset when counting does not
+# start with 0.
+  ALIGN_ATTR_SPEC = (
+      ('year', 0), ('month', 1), ('day', 1),
+      ('hour', 0), ('minute', 0), ('second', 0))
+
+  def __init__(self, configDict):
+    """Create a new aligned tagger component. The class will
+    check all available backup data elements and tag those to
+    be kept, that match the specification of this tagger. All
+    backup data elements tagged by at least one tagger will be
+    kept, the others marked for deletion.
+
+    Configuration parameters for the tagger are:
+    * KeepCount: This is the number of time intervals to search
+      for matching backup data elements and thus the number of
+      backups to keep at most. When there is no matching backup
+      found within a time interval, the empty interval is also
+      included in the count. When there is more than one backup
+      within the interval, only the first one is kept. Thus e.g.
+      having a "KeepCount" of 30 and a "Interval" setting of
+      "day", this will cause backups to be kept from now till
+      30 days ahead (or the time of the latest backup if "TimeRef"
+      was set to "latest").
+    * KeepInc: When true, keep also incremental backups within
+      any interval where backups would be kept. This will also
+      tag the previous full backup and any incremental backups
+      in between for retention. Incremental backups after the
+      last full backup are always kept unconditionally as the
+      are required to restore the latest backup. Default is false.
+    * Interval: This is the size of the retention interval to
+      keep one backup per interval. Values are "year", "month",
+      "day", "hour".
+    * TimeRef: This defines the time reference to use to perform
+      the retention policy evaluation. With "latest" the time
+      of the newest backup is used, while "now" uses the current
+      time. The default is "now".
+    " AlignModulus: This defines the modulus when aligning backup
+      retention to values other than the "Interval" unit, e.g.
+      to keep one backup every three month.
+    * AlignValue: When defined this will make backups to be aligned
+      to that value related to the modulus, e.g. to keep backups
+      of January, April, July, October an "AlignModulus" of 3
+      and "AlignValue" of 1 is required."""
+    self.intervalUnit = None
+    self.alignModulus = 1
+    self.alignValue = 0
+    self.keepCount = None
+    self.keepIncFlag = False
+    self.timeReferenceType = 'now'
+
+    for configKey, configValue in configDict.items():
+      if configKey == 'AlignModulus':
+        if (not isinstance(configValue, int)) or (configValue < 1):
+          raise Exception()
+        self.alignModulus = configValue
+      elif configKey == 'AlignValue':
+        if (not isinstance(configValue, int)) or (configValue < 0):
+          raise Exception()
+        self.alignValue = configValue
+      elif configKey == 'Interval':
+        if configValue not in ['year', 'month', 'day', 'hour']:
+          raise Exception()
+        self.intervalUnit = configValue
+      elif configKey == 'KeepCount':
+        if (not isinstance(configValue, int)) or (configValue < 1):
+          raise Exception()
+        self.keepCount = configValue
+      elif configKey == 'KeepInc':
+        if not isinstance(configValue, bool):
+          raise Exception()
+        self.keepIncFlag = configValue
+      elif configKey == 'TimeRef':
+        if configValue not in ['latest', 'now']:
+          raise Exception()
+        self.timeReferenceType = configValue
+      else:
+        raise Exception(
+            'Unsupported configuration parameter %s' % repr(configKey))
+
+    if self.keepCount is None:
+      raise Exception('Mandatory KeepCount parameter not set')
+    if (self.intervalUnit is not None) and \
+        (self.alignModulus <= self.alignValue):
+      raise Exception('Align value has to be smaller than modulus')
+
+  def tagBackups(self, backupList, tagList):
+    """Check which backup elements should be kept and tag them
+    in the tagList.
+    @param backupList the sorted list of backup data elements.
+    @param tagList list of boolean values of same length as the
+    backupList. The list should be initialized to all False values
+    before calling tagBackups for the first time."""
+
+    if len(backupList) != len(tagList):
+      raise Exception()
+
+# Always tag the newest backup.
+    tagList[-1] = True
+
+    referenceTime = None
+    if self.timeReferenceType == 'now':
+      referenceTime = datetime.datetime.fromtimestamp(time.time())
+    elif self.timeReferenceType == 'latest':
+      referenceTime = datetime.datetime.fromtimestamp(
+          backupList[-1].getDatetimeSeconds())
+    else:
+      raise Exception('Logic error')
+
+# Prefill the data with the default field offsets.
+    alignedTimeData = [x[1] for x in self.ALIGN_ATTR_SPEC]
+    alignFieldValue = None
+    for alignPos in range(0, len(self.ALIGN_ATTR_SPEC)):
+      alignedTimeData[alignPos] = getattr(
+          referenceTime, self.ALIGN_ATTR_SPEC[alignPos][0])
+      if self.intervalUnit == self.ALIGN_ATTR_SPEC[alignPos][0]:
+        alignFieldValue = alignedTimeData[alignPos]
+        break
+
+    startSearchTime = datetime.datetime(*alignedTimeData).timestamp()
+# Handle alignment and modulus rules.
+    if (self.alignModulus != 1) and (self.alignValue is not None):
+      startSearchTime = self.decreaseTimeField(
+          startSearchTime,
+          (alignFieldValue - self.alignValue) % self.alignModulus)
+
+    keepAttempts = self.keepCount + 1
+    while keepAttempts != 0:
+      for pos, backupElement in enumerate(backupList):
+        backupElement = backupList[pos]
+        if (backupElement.getDatetimeSeconds() >= startSearchTime) and \
+            ((backupElement.getType() == 'full') or self.keepIncFlag):
+          tagList[pos] = True
+# Tag all incrementals within the interval.
+          if not self.keepIncFlag:
+            break
+
+# Move down units of intervalUnit size.
+      startSearchTime = self.decreaseTimeField(
+          startSearchTime, self.alignModulus)
+      keepAttempts -= 1
+
+# Now after tagging select also those incremental backups in between
+# to guaranteee that they can be really restored.
+    forceTaggingFlag = True
+    for pos in range(len(backupList) - 1, -1, -1):
+      if forceTaggingFlag:
+        tagList[pos] = True
+        if backupList[pos].getType() == 'full':
+          forceTaggingFlag = False
+      elif (tagList[pos]) and (backupList[pos].getType() == 'inc'):
+        forceTaggingFlag = True
+
+  def decreaseTimeField(self, timestamp, decreaseCount):
+    """Decrease a given time value."""
+    timeValue = datetime.datetime.fromtimestamp(timestamp)
+    if self.intervalUnit == 'year':
+      timeValue = timeValue.replace(year=timeValue.year-decreaseCount)
+    elif self.intervalUnit == 'month':
+# Decrease the month values. As the timestamp was aligned to
+# the first of the month already, the month value can be simple
+# decreased.
+      for modPos in range(0, decreaseCount):
+        if timeValue.month == 1:
+          timeValue = timeValue.replace(year=timeValue.year-1, month=12)
+        else:
+          timeValue = timeValue.replace(month=timeValue.month-1)
+    elif self.intervalUnit == 'day':
+      timeValue = timeValue - datetime.timedelta(days=decreaseCount)
+    else:
+      raise Exception('Logic error')
+    return timeValue.timestamp()
+
+
+class PolicyTypeLevelRetention(Policy):
+  """This policy type defines a data retention policy keeping
+  a number of backups for each time level. The policy itself
+  does not rely on the backup source status but only on the list
+  of backup data elmeents. The policy will flag elements to be
+  deleted when this retention policy has no use for those elmements
+  and will fail if another, concurrent policy or manual intervention,
+  has flagged elements for deletion which should be kept according
+  to this policy."""
+
+  POLICY_NAME = 'LevelRetention'
+
+  def __init__(self, resourceRegex, policyConfig):
+    """Instantiate this policy object from a JSON policy configuration
+    definition."""
+    super().__init__(resourceRegex, policyConfig)
+
+# This is the list of retention level definitions.
+    self.levelList = []
+
+    for configKey, configValue in policyConfig.items():
+      if configKey in ('Name', 'Priority'):
+        continue
+      if configKey == 'Levels':
+        self.parseLevelConfig(configValue)
+        continue
+      raise Exception('Unknown policy configuration setting "%s"' % configKey)
+
+# Validate the configuration settings.
+    if not self.levelList:
+      raise Exception()
+
+  def parseLevelConfig(self, levelConfigList):
+    """Parse the retention policy level configuration."""
+    if not isinstance(levelConfigList, list):
+      raise Exception()
+    for levelConfig in levelConfigList:
+      if not isinstance(levelConfig, dict):
+        raise Exception()
+      self.levelList.append(PolicyTypeLevelRetentionTagger(levelConfig))
+
+  def apply(self, sourceStatus):
+    """Apply this policy to a backup source status."""
+    elementList = sourceStatus.getDataElementList()
+    tagList = [False] * len(elementList)
+    for levelTagger in self.levelList:
+      levelTagger.tagBackups(elementList, tagList)
+    for tagPos, element in enumerate(elementList):
+      element.markForDeletion(not tagList[tagPos])
+
+  def delete(self, sourceStatus):
+    """Prepare the policy status data for deletions going to
+    happen later on."""
+
+
 
 
 class StorageConfig():
-  """This class implements the configuration of a storage location."""
-
-  RESOURCE_NAME_REGEX = re.compile(
-      '^(?P<datetime>[0-9]{14,})-(?P<name>[0-9A-Za-z.-]+)-' \
-      '(?P<type>full|inc)\\.(?P<element>data|info)$')
+  """This class implements the configuration of a storage location
+  without the status information."""
 
   def __init__(self, fileName, parentConfig):
     """Create a storage configuration from a given file name.
@@ -41,11 +541,21 @@ class StorageConfig():
     self.configFileName = fileName
     self.parentConfig = parentConfig
     self.dataDir = None
+# This is the list of files to ignore within the data directory.
+    self.ignoreFileList = []
+# Keep all policies in a list as we need to loop over all of
+# them anyway.
+    self.policyList = None
     self.storageStatusFileName = None
     self.storageStatus = None
-    self.trackedResources = {}
     self.includedConfigList = []
+
+    if not os.path.exists(self.configFileName):
+      raise Exception(
+          'Configuration file "%s" does not exist' % self.configFileName)
+
     config = guerillabackup.Utils.jsonLoadWithComments(self.configFileName)
+    includeFileList = []
     if not isinstance(config, dict):
       raise Exception()
     for configName, configData in config.items():
@@ -59,23 +569,14 @@ class StorageConfig():
               'not exist or is not a directory' % (
                   self.dataDir, self.configFileName))
         continue
+      if configName == 'Ignore':
+        self.ignoreFileList = configData
+        continue
       if configName == 'Include':
-        for includeFileName in configData:
-          includeFileName = self.canonicalizePathname(includeFileName)
-          if not os.path.isfile(includeFileName):
-            raise Exception(
-                'Included configuration %s in configuration %s ' \
-                'does not exist or is not a file' % (
-                    includeFileName, self.configFileName))
-          try:
-            includedConfig = StorageConfig(includeFileName, self)
-            self.includedConfigList.append(includedConfig)
-          except:
-            print(
-                'Failed to load configuration "%s" included from "%s".' % (
-                    includeFileName, self.configFileName),
-                file=sys.stderr)
-            raise
+        includeFileList = configData
+        continue
+      if configName == 'Policies':
+        self.initPolicies(configData)
         continue
       if configName == 'Status':
         if not isinstance(configData, str):
@@ -84,10 +585,36 @@ class StorageConfig():
         if os.path.exists(self.storageStatusFileName):
           if not os.path.isfile(self.storageStatusFileName):
             raise Exception('Status file "%s" has to be file' % configData)
-          self.storageStatus = guerillabackup.Utils.jsonLoadWithComments(
-              self.storageStatusFileName)
+          self.storageStatus = StorageStatus(
+              self,
+              guerillabackup.Utils.jsonLoadWithComments(
+                  self.storageStatusFileName))
         continue
       raise Exception('Invalid configuration section "%s"' % configName)
+
+# Always have a status object even when not loaded from file.
+    if self.storageStatus is None:
+      self.storageStatus = StorageStatus(self, None)
+
+# Initialize the included configuration only after initialization
+# of this object was completed because we pass this object as
+# parent so it might already get used.
+    for includeFileName in includeFileList:
+      includeFileName = self.canonicalizePathname(includeFileName)
+      if not os.path.isfile(includeFileName):
+        raise Exception(
+            'Included configuration %s in configuration %s ' \
+            'does not exist or is not a file' % (
+                includeFileName, self.configFileName))
+      try:
+        includedConfig = StorageConfig(includeFileName, self)
+        self.includedConfigList.append(includedConfig)
+      except:
+        print(
+            'Failed to load configuration "%s" included from "%s".' % (
+                includeFileName, self.configFileName),
+            file=sys.stderr)
+        raise
 
   def getConfigFileName(self):
     """Get the name of the file defining this configuration."""
@@ -101,6 +628,45 @@ class StorageConfig():
       pathname = os.path.join(os.path.dirname(self.configFileName), pathname)
     return os.path.realpath(pathname)
 
+  def getStatusFileName(self):
+    """Get the name of the status file to use to keep validation
+    status information between validation runs."""
+    return self.storageStatusFileName
+
+  def getStatus(self):
+    """Get the status object associated with this configuration."""
+    return self.storageStatus
+
+  def initPolicies(self, policyConfig):
+    """Initialize all policies from the given JSON policy configuration.
+    The configuration may contain multiple policy definitions
+    per resource name regular expression, but that is just for
+    convenience and not reflected in the policy data structures."""
+    if not isinstance(policyConfig, list):
+      raise Exception('Policies not a list')
+
+    policyList = []
+    for policyGroup in policyConfig:
+      if not isinstance(policyGroup, dict):
+        raise Exception('Policies entry not a dictionary')
+      resourceRegexStr = policyGroup['Sources']
+      policyConfigList = policyGroup['List']
+      resourceRegex = re.compile(resourceRegexStr)
+
+      for policyConfigItem in policyConfigList:
+        if policyConfigItem is None:
+          policyList.append(None)
+        else:
+          policy = {
+              PolicyTypeInterval.POLICY_NAME: PolicyTypeInterval,
+              PolicyTypeLevelRetention.POLICY_NAME: PolicyTypeLevelRetention
+          }.get(policyConfigItem['Name'], None)
+          if policy is None:
+            raise Exception(
+                'Unknown policy type "%s"' % policyConfigItem['Name'])
+          policyList.append(policy(resourceRegex, policyConfigItem))
+    self.policyList = policyList
+
   def getDataDirectoryRelativePath(self, pathname):
     """Get the pathname of a file relative to the data directory.
     @param pathname the absolute path name to resolve."""
@@ -109,6 +675,12 @@ class StorageConfig():
   def initializeStorage(self, storageFileDict):
     """Initialize the storage by locating all files in this data
     storage directory and also apply already known status information."""
+
+# First load included configuration data to assign the most specific
+# configuration and status to those resources.
+    for includeConfig in self.includedConfigList:
+      includeConfig.initializeStorage(storageFileDict)
+
 # Walk the data directory to include any files not included yet.
     for dirName, subDirs, subFiles in os.walk(self.dataDir):
       for fileName in subFiles:
@@ -116,109 +688,580 @@ class StorageConfig():
         fileInfo = storageFileDict.get(fileName, None)
         if fileInfo is not None:
           refConfig = fileInfo.getConfig()
+          if refConfig == self:
+            raise Exception('Logic error')
           if self.dataDir == refConfig.dataDir:
             raise Exception(
                 'Data directory "%s" part of at least two ' \
                 '(included) configurations' % self.dataDir)
-          if (not self.dataDir.startswith(refConfig.dataDir)) or \
-              (self.dataDir[len(refConfig.dataDir)] != '/'):
+          if (not refConfig.dataDir.startswith(self.dataDir)) or \
+              (refConfig.dataDir[len(self.dataDir)] != '/'):
             raise Exception(
                 'Directory tree inconsistency due to logic ' \
                 'error or concurrent (malicious) modifictions')
+        else:
 # Add the file and reference to this configuration or override
 # a less specific previous one.
-        storageFileDict[fileName] = StorageFileInfo(self)
+          storageFileDict[fileName] = StorageFileInfo(self.storageStatus)
 
-# Now load included configuration data.
-    for includeConfig in self.includedConfigList:
-      includeConfig.initializeStorage(storageFileDict)
+# Now detect all the valid resources and group them.
+    self.storageStatus.updateResources(storageFileDict)
+    self.storageStatus.validate(storageFileDict)
 
-    if self.storageStatus is not None:
-      for statusFile, statusData in self.storageStatus.items():
-        targetFileName = os.path.join(self.dataDir, statusFile)
-        if targetFileName not in storageFileDict:
-          raise Exception(
-              'Invalid status of nonexisting file "%s" ' \
-              'in data directory "%s"' % (
-                  statusFile, self.dataDir))
-        storageFileDict[targetFileName].initStatusData(statusData)
+  def getSourcePolicies(self, sourceName):
+    """Get the list of policies to be applied to a source."""
+    result = []
+    if self.parentConfig is not None:
+# No need to clone the list as the topmost configuration will
+# have started with a newly created list anyway.
+      result = self.parentConfig.getSourcePolicies(sourceName)
 
-
-  def detectResources(self, storageFileDict):
-    """Detect all valid resources managed by this configuration."""
-    for fileName, fileInfo in storageFileDict.items():
-      if fileInfo.getConfig() != self:
+    for policy in self.policyList:
+# Ignore the empty entry which disabled policy inheritance before.
+      if policy is None:
         continue
-      relFileName = self.getDataDirectoryRelativePath(fileName)
+
+# Ignore policies not matching the source.
+      if not policy.isApplicableToSource(sourceName):
+        continue
+
+      for refPos, refPolicy in enumerate(result):
+        refPolicy = result[refPos]
+        if refPolicy.getPolicyName() == policy.getPolicyName():
+          if refPolicy.getPriority() <= policy.getPriority():
+            result[refPos] = policy
+          policy = None
+          break
+      if policy is not None:
+        result.append(policy)
+      if len(result) == 0:
+        print('WARNING: no policies for %s' % sourceName)
+    return result
+
+
+class BackupDataElement():
+  """This class stores information about a single backup data
+  element that is the reference to the backup data itself but
+  also the meta information. The class is designed in a way to
+  support current file based backup data element storage but
+  also future storages where the meta information may end up
+  in a relational database and the backup data is kept in a storage
+  system."""
+
+# This name is used to store deletion status information in the
+# storage status information in the same way as policy data. Unlike
+# policy data, the delete status data cannot be serialized.
+  DELETE_STATUS_POLICY = 'Delete'
+
+  def __init__(self, sourceStatus, dateTimeId, elementType):
+    """Create a element as part of the status of one backup source.
+    @param sourceStatus this is the reference to the complete
+    status of the backup source this element is belonging to.
+    @param dateTimeId the datetime string when this element was
+    created and optional ID number part. It has to contain at
+    least a 14 digit timestamp but may include more digits
+    which then sorted according to their integer value."""
+    self.sourceStatus = sourceStatus
+    if (len(dateTimeId) < 14) or (not dateTimeId.isnumeric()):
+      raise Exception('Datetime to short or not numeric')
+    self.dateTimeId = dateTimeId
+    if elementType not in ('full', 'inc'):
+      raise Exception()
+    self.type = elementType
+    self.dataFileName = None
+    self.infoFileName = None
+# This dictionary contains policy data associated with this element.
+# The key is the name of the policy holding the data.
+    self.policyData = {}
+
+  def getSourceStatus(self):
+    """Get the complete source status information this backup
+    data element is belonging to.
+    @return the source status object."""
+    return self.sourceStatus
+
+  def getDateTimeId(self):
+    """Get the date, time and ID string of this element."""
+    return self.dateTimeId
+
+  def setFile(self, fileName, fileType):
+    """Set a file of given type to define this backup data element."""
+    if fileType == 'data':
+      if self.dataFileName is not None:
+        raise Exception(
+            'Logic error redefining data file for "%s"' % (
+                self.sourceStatus.getSourceName()))
+      if not fileName.endswith('.data'):
+        raise Exception()
+      self.dataFileName = fileName
+    elif fileType == 'info':
+      if self.infoFileName is not None:
+        raise Exception()
+      self.infoFileName = fileName
+    else:
+      raise Exception('Invalid file type %s' % fileType)
+
+  def getElementName(self):
+    """Get the name of the element in the storage."""
+    sourceName = self.sourceStatus.getSourceName()
+    elementStart = sourceName.rfind('/') +1
+    partStr = '%s-%s-%s' % (
+        self.dateTimeId, sourceName[elementStart:], self.type)
+    if elementStart:
+      return '%s%s' % (sourceName[:elementStart], partStr)
+    return partStr
+
+  def getDatetimeSeconds(self):
+    """Get the datetime part of this element as seconds since
+    epoche."""
+    dateTime = datetime.datetime.strptime(self.dateTimeId[:14], '%Y%m%d%H%M%S')
+# FIXME: no UTC conversion yet.
+    return int(dateTime.timestamp())
+
+  def getDatetimeTuple(self):
+    """Get the datetime of this element as a tuple.
+    @return a tuple with the datetime part as string and the
+    serial part as integer or -1 when there is no serial part."""
+    dateTime = self.dateTimeId[:14]
+    serial = -1
+    if len(self.dateTimeId) > 14:
+      serialStr = self.dateTimeId[14:]
+      if (serialStr[0] == '0') and (len(serialStr) > 1):
+        raise Exception()
+      serial = int(serialStr)
+    return (dateTime, serial)
+
+  def getType(self):
+    """Get the type of this backup data element."""
+    return self.type
+
+  def getStatusData(self):
+    """Get the complete status data associated with this element.
+    Currently this data is identical to the complete policy data.
+    @return the status data or None when there is no status data
+    associated with this element."""
+    return self.policyData
+
+  def getPolicyData(self, policyName):
+    """Get the policy data for a given policy name.
+    @return the data or None when there was no data defined yet."""
+    return self.policyData.get(policyName, None)
+
+  def setPolicyData(self, policyName, data):
+    """Set the policy data for a given policy name."""
+    self.policyData[policyName] = data
+
+  def updatePolicyData(self, policyName, data):
+    """Update the policy data for a given policy name by adding
+    or overriding the data.
+    @return the updated policy data"""
+    if not isinstance(data, dict):
+      raise Exception()
+    policyData = self.policyData.get(policyName, None)
+    if policyData is None:
+      policyData = dict(data)
+      self.policyData[policyName] = policyData
+    else:
+      policyData.update(data)
+    return policyData
+
+  def initPolicyData(self, data):
+    """Initialize the complete policy data of this backup data
+    element. This function may only be called while there is
+    no policy data defined yet."""
+    if self.policyData:
+      raise Exception(
+          'Attempted to initialize policy data twice for %s' % (
+              repr(self.dataFileName)))
+    self.policyData = data
+
+  def findUnsuedPolicyData(self, policyNames):
+    """Check if this element contains policy data not belonging
+    to any policy.
+    @return the name of the first unused policy found or None."""
+    for key in self.policyData.keys():
+      if key not in policyNames:
+        return key
+    return None
+
+
+
+  def markForDeletion(self, deleteFlag):
+    """Mark this element for deletion if it was not marked at
+    all or marked in the same way.
+    @param deleteFlag the deletion mark to set or None to remove
+    the current mark.
+    @raise Exception if there is already a conflicting mark."""
+
+    if (deleteFlag is not None) and (not isinstance(deleteFlag, bool)):
+      raise Exception()
+
+    policyData = self.getPolicyData(BackupDataElement.DELETE_STATUS_POLICY)
+    if (policyData is not None) and (not isinstance(policyData, bool)):
+      raise Exception()
+
+    if deleteFlag is None:
+      if policyData:
+        self.getPolicyData.remove(BackupDataElement.DELETE_STATUS_POLICY)
+    else:
+      if (policyData is not None) and (policyData != deleteFlag):
+        raise Exception()
+      self.setPolicyData(BackupDataElement.DELETE_STATUS_POLICY, deleteFlag)
+
+  def isMarkedForDeletion(self):
+    """Check if this element is marked for deletion."""
+    policyData = self.getPolicyData(BackupDataElement.DELETE_STATUS_POLICY)
+    if (policyData is not None) and (not isinstance(policyData, bool)):
+      raise Exception()
+    return bool(policyData)
+
+  def delete(self):
+    """Delete all resources associated with this backup data
+    element."""
+#   os.unlink(self.dataFileName)
+#   os.unlink(self.infoFileName)
+    raise Exception('FIXME')
+
+
+class BackupSourceStatus():
+  """This class stores status information about a single backup
+  source, e.g. all BackupDataElements belonging to this source,
+  current policy status information ..."""
+
+  def __init__(self, storageStatus, sourceName):
+    self.storageStatus = storageStatus
+# This is the unique name of this source.
+    self.sourceName = sourceName
+# This dictionary contains all backup data elements belonging
+# to this source with datetime and type as key.
+    self.dataElements = {}
+
+  def getStorageStatus(self):
+    """Get the complete storage status containing the status
+    of this backup source.
+    @return the storage status object."""
+    return self.storageStatus
+
+  def getSourceName(self):
+    """Get the name of the source that created the backup data
+    elements.
+    @return the name of the source."""
+    return self.sourceName
+
+  def addFile(self, fileName, dateTimeId, elementType, fileType):
+    """Add a file to this storage status. With the current file
+    storage model, two files will define a backup data element.
+    @param fileName the file to add.
+    @param dateTimeId the datetime and additional serial number
+    information.
+    @param elementType the type of element to create, i.e. full
+    or incremental.
+    @param fileType the type of the file, i.e. data or info."""
+    key = (dateTimeId, elementType)
+    element = self.dataElements.get(key, None)
+    if element is None:
+      element = BackupDataElement(self, dateTimeId, elementType)
+      self.dataElements[key] = element
+    element.setFile(fileName, fileType)
+
+  def getDataElementList(self):
+    """Get the sorted list of all data elements."""
+    result = list(self.dataElements.values())
+    result.sort(key=lambda x: x.getDatetimeTuple())
+    return result
+
+  def findElementByKey(self, dateTimeId, elementType):
+    """Find an element by the identification key values.
+    @return the element or None when not found."""
+    return self.dataElements.get((dateTimeId, elementType), None)
+
+  def getElementIdString(self, element):
+    """Get the identification string of a given element of this
+    source."""
+    idStr = ''
+    pathEndPos = self.sourceName.rfind('/')
+    if pathEndPos >= 0:
+      idStr = '%s/%s-%s-%s' % (
+          self.sourceName[:pathEndPos],
+          element.getDateTimeId(),
+          self.sourceName[pathEndPos+1:],
+          element.getType())
+    else:
+      idStr = '%s-%s-%s' % (
+          element.getDateTimeId(), self.sourceName,
+          element.getType())
+    return idStr
+
+  def removeDeleted(self):
+    """Remove all elements that are marked deleted. The method
+    should only be invoked after applying all deletion policies."""
+    for key in list(self.dataElements.keys()):
+      element = self.dataElements[key]
+      if element.isMarkedForDeletion():
+        del self.dataElements[key]
+
+  def serializeStatus(self):
+    """Serialize the status of all files belonging to this source.
+    @return a dictionary with the status information."""
+    status = {}
+    for element in self.dataElements.values():
+      statusData = element.getStatusData()
+# Do not serialize the deletion policy data.
+      if BackupDataElement.DELETE_STATUS_POLICY in statusData:
+        statusData = dict(statusData)
+        del statusData[BackupDataElement.DELETE_STATUS_POLICY]
+        if not statusData:
+          statusData = None
+      if statusData:
+        status[self.getElementIdString(element)] = statusData
+    return status
+
+
+class StorageStatus():
+  """This class keeps track about the status of one storage location,
+  that are all tracked resources but also unrelated files within
+  the storage location."""
+
+  RESOURCE_NAME_REGEX = re.compile(
+      '^(?P<datetime>[0-9]{14,})-(?P<name>[0-9A-Za-z.-]+)-' \
+      '(?P<type>full|inc)\\.(?P<element>data|info)$')
+
+  def __init__(self, config, statusData):
+    self.config = config
+    self.statusData = statusData
+    if self.statusData is None:
+      self.statusData = {}
+# This dictionary contains the name of each source (not file)
+# found in this storage as key and the BackupSourceStatus element
+# bundling all relevant information about the source.
+    self.trackedSources = {}
+
+  def getStatusFileName(self):
+    """Get the file name holding this backup status data."""
+    return self.config.getStatusFileName()
+
+  def findElementByName(self, name):
+    """Find a backup element tracked by this status object by
+    name.
+    @return the element when found or None"""
+    relFileName = name + '.data'
+    nameStartPos = relFileName.rfind('/') + 1
+    match = StorageStatus.RESOURCE_NAME_REGEX.match(
+        relFileName[nameStartPos:])
+    if match is None:
+      raise Exception(
+          'Invalid lement name "%s"' % str(name))
+    sourceName = match.group('name')
+    if nameStartPos != 0:
+      sourceName = relFileName[:nameStartPos] + sourceName
+    sourceStatus = self.trackedSources[sourceName]
+    return sourceStatus.findElementByKey(
+        match.group('datetime'), match.group('type'))
+
+  def validate(self, storageFileDict):
+    """Validate that all files tracked in the status can be still
+    found in the list of all storage files."""
+    for elemName in self.statusData.keys():
+      targetFileName = os.path.join(self.config.dataDir, elemName + '.data')
+      if targetFileName not in storageFileDict:
+        raise Exception(
+            'Invalid status of nonexisting file "%s.data" ' \
+            'in data directory "%s"' % (
+                elemName, self.config.dataDir))
+
+  def updateResources(self, storageFileDict):
+    """Update the status of valid sources.
+    @param storageFileDict the dictionary keeping track of known
+    files from all configurations."""
+
+    ignoreSet = set()
+    ignoreSet.update(self.config.ignoreFileList)
+    for fileName, fileInfo in storageFileDict.items():
+      if fileInfo.getStatus() != self:
+        continue
+      relFileName = self.config.getDataDirectoryRelativePath(fileName)
+      if relFileName in ignoreSet:
+        ignoreSet.remove(relFileName)
+        continue
+
       nameStartPos = relFileName.rfind('/') + 1
-      match = StorageConfig.RESOURCE_NAME_REGEX.match(
+      match = StorageStatus.RESOURCE_NAME_REGEX.match(
           relFileName[nameStartPos:])
       if match is None:
-        if not fileInfo.hasStatusData(PolicyIgnore.POLICY_NAME):
-          print(
-              'File "%s" should be ignored by config "%s".' % (
-                  fileInfo.getConfig().getDataDirectoryRelativePath(fileName),
-                  fileInfo.getConfig().getConfigFileName()),
-              file=sys.stderr)
+        print(
+            'File "%s" should be ignored by config "%s".' % (
+                fileInfo.getConfig().getDataDirectoryRelativePath(fileName),
+                fileInfo.getConfig().getConfigFileName()),
+            file=sys.stderr)
         continue
-      resourceName = match.group('name')
+      sourceName = match.group('name')
       if nameStartPos != 0:
-        resourceName = relFileName[:nameStartPos] + resourceName
+        sourceName = relFileName[:nameStartPos] + sourceName
 
-      if resourceName not in self.trackedResources:
-        self.trackedResources[resourceName] = []
-      self.trackedResources[resourceName].append(fileName)
-      fileInfo.setResourceGroup(self.trackedResources[resourceName])
+      sourceStatus = self.trackedSources.get(sourceName, None)
+      if sourceStatus is None:
+        sourceStatus = BackupSourceStatus(self, sourceName)
+        self.trackedSources[sourceName] = sourceStatus
+      sourceStatus.addFile(
+          fileName, match.group('datetime'), match.group('type'),
+          match.group('element'))
+      fileInfo.setBackupSource(sourceStatus)
 
-    for includeConfig in self.includedConfigList:
-      includeConfig.detectResources(storageFileDict)
+    for unusedIgnoreFile in ignoreSet:
+      print(
+          'WARNING: Nonexisting file "%s" ignored in configuration "%s".' % (
+              unusedIgnoreFile, self.config.getConfigFileName()),
+          file=sys.stderr)
+
+    for elemName, statusData in self.statusData.items():
+      element = self.findElementByName(elemName)
+      if element is None:
+        raise Exception(
+            'Invalid status of nonexisting element "%s" ' \
+            'in data directory "%s"' % (
+                elemName, self.config.dataDir))
+      element.initPolicyData(statusData)
+
+  def applyPolicies(self):
+    """Apply the policy to this storage and all storages defined
+    in subconfigurations. For each storage this will check all
+    policy templates if one or more of them should be applied
+    to known sources managed by this configuration."""
+    for includeConfig in self.config.includedConfigList:
+      includeConfig.getStatus().applyPolicies()
+
+    for sourceName, sourceStatus in self.trackedSources.items():
+      policyList = self.config.getSourcePolicies(sourceName)
+      policyNames = set()
+      policyNames.add(BackupDataElement.DELETE_STATUS_POLICY)
+      for policy in policyList:
+        policyNames.add(policy.getPolicyName())
+        policy.apply(sourceStatus)
+
+# Now check if any element is marked for deletion. In the same
+# round detect policy status not belonging to any policy.
+      deleteList = []
+      for element in sourceStatus.getDataElementList():
+        if element.findUnsuedPolicyData(policyNames):
+          print(
+              'WARNING: Unused policy data for "%s" in ' \
+              'element "%s".' % (
+                  element.findUnsuedPolicyData(policyNames),
+                  element.getElementName()), file=sys.stderr)
+
+        if element.isMarkedForDeletion():
+          deleteList.append(element)
+      if not deleteList:
+        continue
+
+# So there are deletions, show them and ask for confirmation.
+      print('Backup data to be kept/deleted for "%s" in storage "%s":' %
+          (sourceName, self.config.getConfigFileName()))
+      for element in sourceStatus.getDataElementList():
+        marker = '*'
+        if element.isMarkedForDeletion():
+          marker = ' '
+        print(
+            '%s %s %s' % (marker, element.getDateTimeId(), element.getType()))
+      inputText = None
+      if StorageTool.INTERACTIVE_MODE == 'keyboard':
+        inputText = input('Delete elements in "%s" (y/n)? ' % sourceName)
+      elif StorageTool.INTERACTIVE_MODE == 'force-no':
+        pass
+      elif StorageTool.INTERACTIVE_MODE == 'force-yes':
+        inputText = 'y'
+      if inputText != 'y':
+# Deletion was not confirmed.
+        continue
+
+# So there are deletions. Deleting data may corrupt the status
+# data if there is any software or system error while processing
+# the deletions. Therefore save the current status in a temporary
+# file before modifying the data by applying deletion policies.
+# Verify that there was no logic flaw assinging sources to the
+# wrong storage.
+      if sourceStatus.getStorageStatus() != self:
+        raise Exception()
+# Now save the current storage status to a temporary file as
+# applying policies might have modified it already.
+      statusFileNamePreDelete = self.save(suffix='.pre-delete')
+
+      for policy in policyList:
+        policy.delete(sourceStatus)
+# All policies were invoked, so remove the deleted elements from
+# the status.
+      sourceStatus.removeDeleted()
+
+# So at least updating the status data has worked, so save the
+# status data.
+      statusFileNamePostDelete = self.save(suffix='.post-delete')
+
+# Now just delete the files. File system errors or system crashes
+# will still cause an inconsistent state, but that is easy to
+# detect.
+      for element in deleteList:
+        element.delete()
+
+      os.unlink(statusFileNamePreDelete)
+      os.rename(statusFileNamePostDelete, self.config.getStatusFileName())
+
+  def save(self, suffix=None):
+    """Save the current storage status to the status file or
+    a new file derived from the status file name by adding a
+    suffix. When saving to the status file, the old status file
+    may exist and is replaced. Saving to files with suffix is
+    only intended to create temporary files to avoid status data
+    corruption during critical operations. These files shall
+    be removed or renamed by the caller as soon as not needed
+    any more.
+    @return the file name the status data was written to."""
+# First serialize all status data.
+    statusData = {}
+    for sourceStatus in self.trackedSources.values():
+      statusData.update(sourceStatus.serializeStatus())
+    targetFileName = self.config.getStatusFileName()
+    if suffix is not None:
+      targetFileName += suffix
+      if os.path.exists(targetFileName):
+        raise Exception()
+    targetFile = open(targetFileName, 'wb')
+    targetFile.write(bytes(json.dumps(
+        statusData, indent=2, sort_keys=True), 'ascii'))
+    targetFile.close()
+    return targetFileName
 
 
 class StorageFileInfo():
   """This class stores information about one file found in the
   file data storage directory."""
 
-  def __init__(self, config):
+  def __init__(self, status):
 # This is the storage configuration authoritative for defining
 # the status and policy of this file.
-    self.config = config
-# This dictionary contains the policies applied to the file and
-# the policy status parameters.
-    self.statusData = None
-# This is the resource group this file belongs to.
-    self.resourceGroup = None
+    self.status = status
+# This is the backup source that created the file data.
+    self.backupSource = None
+
+  def getStatus(self):
+    """Get the authoritative status for this file."""
+    return self.status
+
+  def setBackupSource(self, backupSource):
+    """Set the backup source this file belongs to."""
+    if self.backupSource is not None:
+      raise Exception('Logic error')
+    self.backupSource = backupSource
 
   def getConfig(self):
-    """Get the authoritative configuration for this file."""
-    return self.config
-
-  def initStatusData(self, statusData):
-    """Initialize the status data."""
-    if self.statusData is not None:
-      raise Exception('Logic error')
-    self.statusData = statusData
-
-  def hasStatusData(self, policyName):
-    """Check if there is status data for a given policy."""
-    if self.statusData is None:
-      return False
-    return bool(policyName in self.statusData)
-
-  def getStatusData(self, policyName):
-    """Get the status data for a given policy."""
-    if self.statusData is None:
-      return None
-    return self.statusData.get(policyName, None)
-
-  def setResourceGroup(self, resourceGroup):
-    """Set the resource group this file belongs to."""
-    if self.resourceGroup is not None:
-      raise Exception('Logic error')
-    self.resourceGroup = resourceGroup
+    """Get the configuration associated with this storage file."""
+    return self.status.config
 
 
 class StorageTool():
   """This class implements the storage tool main functions."""
+
+# Use a singleton variable to define interactive behaviour.
+  INTERACTIVE_MODE = 'keyboard'
 
   def __init__(self):
     """Create a StorageTool object with default configuration.
@@ -226,6 +1269,8 @@ class StorageTool():
     data from files."""
     self.configFileName = '/etc/guerillabackup/storage-tool-config.json'
     self.config = None
+# This is the dictionary of all known storage files found in
+# the data directory of the main configuration or any subconfiguration.
     self.storageFileDict = {}
 
   def parseCommandLine(self):
@@ -238,12 +1283,15 @@ class StorageTool():
       argName = sys.argv[argPos]
       argPos += 1
       if not argName.startswith('--'):
-        raise Exception('Invalid argument "%s"' % argName, file=sys.stderr)
+        raise Exception('Invalid argument "%s"' % argName)
       if argName == '--Config':
         self.configFileName = sys.argv[argPos]
         argPos += 1
         continue
-      raise Exception('Unknown parameter "%s"' % argName, file=sys.stderr)
+      if argName == '--DryRun':
+        StorageTool.INTERACTIVE_MODE = 'force-no'
+        continue
+      raise Exception('Unknown parameter "%s"' % argName)
 
 
   def loadConfiguration(self):
@@ -252,12 +1300,16 @@ class StorageTool():
       raise Exception('Cannot reload configuration')
     self.config = StorageConfig(self.configFileName, None)
 
+
   def initializeStorage(self):
     """Initialize the storage by locating all files in data storage
     directories and also apply already known status information."""
     self.config.initializeStorage(self.storageFileDict)
-# Now detect all the valid resources and group them.
-    self.config.detectResources(self.storageFileDict)
+
+  def applyPolicies(self):
+    """Check all policy templates if one or more should be applied
+    to any known resource."""
+    self.config.getStatus().applyPolicies()
 
 
 def main():
@@ -268,6 +1320,12 @@ def main():
 # Now all recursive configurations are loaded. First initialize
 # the storage.
   tool.initializeStorage()
+
+# Next check for files not already covered by policies according
+# to status data. Suggest status changes for those.
+  tool.applyPolicies()
+  print('All policies applied.', file=sys.stderr)
+
 
 if __name__ == '__main__':
   main()
