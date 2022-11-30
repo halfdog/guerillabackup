@@ -2,11 +2,83 @@
 # StorageTool man page for more information.
 
 {
+# These are the default policies to apply to resources in the
+# data directory when they are first seen. Policies are passed
+# on from a configuration to included subconfigurations. An included
+# configuration may override a policy by defining another one
+# on the same resource but with higher priority. To disable policy
+# inheritance, add a null policy as first element in the list.
+  "Policies": [
+    {
+      "Sources": "^(.*/)?root$",
+      "List": [
+        null,
+        {
+          "Name": "Interval",
+          "Priority": 100,
+          "FullMin": "6d20H",
+          "FullMax": "6d28H",
+          "IncMin": "20H",
+          "IncMax": "28H"
+        }, {
+          "Name": "LevelRetention",
+          "Levels": [
+# Keep weekly backups for 30 days, including incremental backups.
+            {
+              "KeepCount": 30,
+              "Interval": "day",
+              "TimeRef": "latest",
+              "KeepInc": true
+            },
+# Keep weekly backups for 3 month, approx. 13 backups.
+            {
+              "KeepCount": 13,
+              "Interval": "day",
+              "AlignModulus": 7
+            },
+# Keep monthly backups for 12 month.
+            {
+              "KeepCount": 12,
+              "Interval": "month"
+            },
+# Keep 3-month backups for 3 years, total 12 backups.
+            {
+              "KeepCount": 12,
+              "Interval": "month",
+              "AlignModulus": 3,
+              "AlignValue": 1
+            },
+# Keep yearly backups.
+            {
+              "KeepCount": 10,
+              "Interval": "year"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Sources": "^(.*/)?var/log/.*$",
+      "List": [
+        {
+          "Name": "Interval",
+          "Priority": 100,
+          "FullMin": "20H",
+          "FullMax": "28H"
+        }
+      ]
+    }
+  },
 # This is the data directory for this configuration. All files
 # not within the data directory of another (sub-)configuration
 # have to be sane backup resource files or otherwise covered
 # by a policy, usually the "Ignore" policy in the status file.
   "DataDir": "/var/lib/guerillabackup/data",
+
+# Ignore those files in the data directory. Ignoring nonexisting
+# files will cause a warning.
+  "Ignore": [
+  ],
 
 # This is the status file defining the current status associated
 # with files in "DataDir" when required.
