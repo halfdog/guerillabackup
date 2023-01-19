@@ -918,9 +918,8 @@ class BackupDataElement():
   def delete(self):
     """Delete all resources associated with this backup data
     element."""
-#   os.unlink(self.dataFileName)
-#   os.unlink(self.infoFileName)
-    raise Exception('FIXME')
+    os.unlink(self.dataFileName)
+    os.unlink(self.infoFileName)
 
 
 class BackupSourceStatus():
@@ -1050,7 +1049,7 @@ class StorageStatus():
         relFileName[nameStartPos:])
     if match is None:
       raise Exception(
-          'Invalid lement name "%s"' % str(name))
+          'Invalid element name "%s"' % str(name))
     sourceName = match.group('name')
     if nameStartPos != 0:
       sourceName = relFileName[:nameStartPos] + sourceName

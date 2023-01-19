@@ -6,8 +6,11 @@ guerillabackup (0.4.0~rc-20230119) unstable; urgency=low
     * Fixed backup generation pipeline race condition on asynchronous
       shutdown.
     * Applied pylint.
+  * StorageTool:
+    * Removed anti-file-deletion protection left in code accidentally.
+    * Fixed error message typos.
 
- -- halfdog <me@halfdog.net>  Thu, 19 Jan 2023 11:30:01 +0000
+ -- halfdog <me@halfdog.net>  Thu, 19 Jan 2023 11:32:09 +0000
 
 guerillabackup (0.3.0) unstable; urgency=low
 
