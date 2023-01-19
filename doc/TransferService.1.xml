@@ -33,7 +33,7 @@
       </author>
     </authorgroup>
     <copyright>
-      <year>2016-2022</year>
+      <year>2016-2023</year>
       <holder>&dhusername;</holder>
     </copyright>
     <legalnotice>
@@ -53,7 +53,7 @@
   </refmeta>
   <refnamediv>
     <refname>TransferService</refname>
-    <refpurpose>Synchronize guerillabackup backup data storages</refpurpose>
+    <refpurpose>Synchronise guerillabackup backup data storages</refpurpose>
   </refnamediv>
   <refsynopsisdiv>
     <cmdsynopsis>
@@ -69,13 +69,13 @@
       /usr/share/doc/guerillabackup. The service has two main
       purposes: providing a stream-based protocol for interaction
       with other TransferService instances and application of
-      storage and retrieval policies for data synchronization.</para>
+      storage and retrieval policies for data synchronisation.</para>
     <para>The network part uses a local (AF_UNIX) socket to listen
     for incoming connections (see /var/run/guerillabackup/transfer.socket
     below). There is no authentication magic or likely-to-be-flawed
     custom-made crypto included in that part: any process allowed
     to open the socket can talk the protocol. For connectivity
-    and authentication, use your favorite (trusted) tools. Good
+    and authentication, use your favourite (trusted) tools. Good
     starting points are socat with OPENSSL X509 client/server
     certificate checks on one side and 
     UNIX-CONNECT:/var/run/guerillabackup/transfer.socket for the
@@ -85,7 +85,7 @@
     and default security options (restrict).</para>
 
     <para>The policies are the other domain of the TransferService.
-    They define the authorization rules granting access to backup
+    They define the authorisation rules granting access to backup
     data elements but do NOT grant access to the remote file system
     as such or allow creation or restore of backups. That is the
     domain of BackupGenerator tool. The policy also defines, which

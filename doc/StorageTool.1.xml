@@ -178,7 +178,7 @@
           <para>This configuration specifies that to all backups
           from source with name "root" (the default backup created
           by the <command>BackupGenerator</command>) an Interval
-          policy shall be epplied. The policy will expect full
+          policy shall be applied. The policy will expect full
           backups every 7 days +- 4 hours and incremental backups
           each day +- 4 hours.</para>
 
@@ -270,17 +270,17 @@
           from the most recent on ("TimeRef": "latest"), including
           incremental backups ("KeepInc": true). Thus for machines
           not producing backups any more, the most recent ones
-          are kept uncoditionally.</para>
+          are kept unconditionally.</para>
 
           <para>On the next level, 13 weekly backups are kept,
           while may overlap with backups already kept due to
           the first level configuration from above. But here
           only full backups will be kept, that were generated
-          after every 7th day due to "AlignModulus", prefering
+          after every 7th day due to "AlignModulus", preferring
           the one generated on day 0.</para>
 
           <para>At another level, only one backup is kept every
-          three month, prefering the one from the month numbered
+          three month, preferring the one from the month numbered
           1, 4, 7, 10 due to "AlignModulus" and "AlignValue".
           Hence the first backup in January, April, ... should
           be kept.</para>
