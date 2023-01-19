@@ -15,12 +15,12 @@ Directory structure:
     location. Currently this is the home directory of a GnuPG
     key store.
   * lib-enabled: This directory is included in the site-path by
-    default. Add symlinks to include specific Python packages
+    default. Add symbolic links to include specific Python packages
     or machine/organisation specific code.
   * units: The units directory contains the enabled backup data
     generation units. To enable a unit, a symbolic link to the
-    unit definition file has to be created. The name of the symlink
-    has to consist only of letters and numbers. For units with
+    unit definition file has to be created. The name of the symbolic
+    link has to consist only of letters and numbers. For units with
     an associated configuration file named "[unitname].config",
     configuration parameters from the main configuration file
     can be overridden within the unit-specific configuration.
@@ -48,8 +48,8 @@ Configuration loading happens in 2 stages:
 
   * Loading of the main configuration.
   * Loading of a component/module specific overlay configuration.
-    This is allows tools to perform modularized tasks, e.g. a backup
-    generator processing different sources, to apply userdefined
+    This is allows tools to perform modularised tasks, e.g. a backup
+    generator processing different sources, to apply user-defined
     configuration alterations to the configuration of a single unit.
     The overlay configuration is then merged with the main configuration.
 
@@ -64,9 +64,21 @@ Backup Generator:
 * Process pipelines:
 
 Pipeline implementation is designed to support both operating
-system processes using only filedescriptors for streaming and
+system processes using only file descriptors for streaming,
 pure Python processes, that need to be run in a separate thread
-or are polled for normal operation.
+or are polled for normal operation and a mixture of both, i.e.
+only one of input or output is an operating system pipe. Because
+of the last case, a pipeline instance may behave like a synchronous
+component at the beginning until the synchronous input was processed
+and the end of input data was reached. From that moment on till
+all processing is finished it behaves like an asynchronous component.
+
+  * State handling:
+
+A pipeline instance may only change its state when the doProcess()
+or isRunning() method is called. It is forbidden to invoke doProcess()
+on an instance not running any more. Therefore after isRunning()
+returned true, it is save to call doProcess().
 
   * Error handling:
 
@@ -79,20 +91,40 @@ One error variant is, that operating system processes did not
 read all input from their input pipes and some data remains in
 buffers. This error has to be reported to the caller either from
 doProcess() or stop(), whatever comes first. The correct detection
-of input might fail, if a downstream component is stopped while
-the upstream is running and writing or flushing data to a pipe
-after the checks.
+of unprocessed input data may fail, if a downstream component
+is stopped while the upstream is running and writing data to
+a pipe after the checks.
+
+  * Pipeline element implementation:
+
+    * DigestPipelineElement:
+
+A synchronous element creating a checksum of all data passing
+through it.
+
+    * GpgEncryptionPipelineElement:
+
+A pipeline element returning a generic OSProcessPipelineExecutionInstance
+to perform encryption using GnuPG.
+
+    * OSProcessPipelineElement:
+
+This pipeline element will create an operating system level process
+wrapped in a OSProcessPipelineExecutionInstance to perform the
+transformation. The instance may be fully asynchronous when it
+is connected only by operating system pipes but is synchronous
+when connected via stdin/stdout data moving.
 
 
-Policy Based Data Synchronization:
+Policy Based Data Synchronisation:
 ==================================
 
-To support various requirements, e.g. decentraliced backup generation
+To support various requirements, e.g. decentralised backup generation
 with secure secure spooling, asynchronous transfers, a the "TransferService",
-a component for synchronization is required, see "doc/Design.txt"
-section "Synchronization" for design information.
+a component for synchronisation is required, see "doc/Design.txt"
+section "Synchronisation" for design information.
 
-The implementaion of "TransferService" orchestrates all components
+The implementation of "TransferService" orchestrates all components
 required related to following functional blocks:
 
 * ConnectorService: This service provides functions to establish
@@ -100,7 +132,7 @@ required related to following functional blocks:
   only "SocketConnectorService" together with protocol handler
   "JsonStreamServerProtocolRequestHandler" is supported. The
   service has to care about authentication and basic service
-  access authorization.
+  access authorisation.
 
 * Policies: Policies define, how the "TransferService" should
   interact with other "TransferService" instances. There are
@@ -112,7 +144,7 @@ required related to following functional blocks:
 * Storage: A storage to store, fetch and delete StorageBackupDataElements.
   Some storages may support storing of custom annotation data
   per element. This can then be used in policies to perform policy
-  decisions, e.g. to priotise sending of files according to tags.
+  decisions, e.g. to prioritise sending of files according to tags.
   Current storage implementation is "DefaultFileStorage".
 
 * TransferAgent: The agent keeps track of all current connections
@@ -162,14 +194,14 @@ This is the common superinterface of all receiver transfer policies.
 
 * ServerProtocolInterface:
 
-This is the server side protocol adapter to be provided to the
+This is the server side protocol adaptor to be provided to the
 transfer service to forward remote requests to the local SenderPolicy.
 
 * SenderMoveDataTransferPolicy(SenderTransferPolicy):
 
 This is a simple sender transfer policy just advertising all resources
-for transfer and removing them or marking them as transfered as
-soon as remote side confirms sucessful transfer. A file with a
+for transfer and removing them or marking them as transferred as
+soon as remote side confirms successful transfer. A file with a
 mark will not be offered for download any more.
   * applyPolicy(): deletes the file when transfer was successful.
 
@@ -177,10 +209,10 @@ mark will not be offered for download any more.
 
 This is the common superinterface of all sender side transfer
 policies. A policy implementation may require to adjust the internal
-state after data was transfered.
+state after data was transferred.
   * queryBackupDataElements(): return an iterator over all elements
     eligible for transfer by the current policy. The query may
-    support remote side supplied query data for optimization.
+    support remote side supplied query data for optimisation.
     This should of course only be used when the remote side knows
     the policy.
   * applyPolicy(): update internal state after data transfer
@@ -190,7 +222,7 @@ state after data was transfered.
 
 This is currently the only ConnectorService available. It accepts
 incoming connections on a local UNIX socket. Authentication and
-socket access authorization has to be handled UNIX permissions
+socket access authorisation has to be handled UNIX permissions
 or integration with other tools, e.g. "socat". For each incoming
 connection it uses a "JsonStreamServerProtocolRequestHandler"
 protocol handler.
@@ -201,7 +233,7 @@ This class provides the core functionality for in and outbound
 transfers. It has a single sender or receiver transfer policy
 or both attached. Protocol connections are attached to it using
 a ConnectorService. The agent does not care about authentication
-any more: everything relevant for authorization has to be provided
+any more: everything relevant for authorisation has to be provided
 by the ConnectorService and stored to the TransferContext.
 
 
@@ -217,7 +249,7 @@ directories or files exist referenced by the configuration exist.
 It also loads the "StorageStatus" (if any) but does not validate
 any entries inside it.
 
-A subconfiguration is only loaded after initialization of the
+A subconfiguration is only loaded after initialisation of the
 parent configuration was completed.
 
 See "StorageTool.loadConfiguration", "StorageConfig.__init__".
@@ -227,11 +259,11 @@ See "StorageTool.loadConfiguration", "StorageConfig.__init__".
 
 This step is done for the complete configuration tree with main
 configuration as root and all included subconfiguration branches
-and leafes. Starting with the most specific (leaf) configurations,
+and leaves. Starting with the most specific (leaf) configurations,
 all files in the data directory are listed, associated with the
-current configuration loading it. After processing of leafes
-the same is done for the branch configuration including the leafes,
-thus adding files not yet covered by the leafes and branches.
+current configuration loading it. After processing of leaves
+the same is done for the branch configuration including the leaves,
+thus adding files not yet covered by the leaves and branches.
 
 When all available storage files are known, they are grouped
 into backup data elements (data and metadata) before grouping
@@ -239,5 +271,5 @@ also elements from the same source.
 
 See "StorageTool.initializeStorage", "StorageConfig.initializeStorage".
 
-* Check for applicable but yet unused policy templates and apply 
+* Check for applicable but yet unused policy templates and apply
   them to files matching the selection pattern:
