@@ -99,7 +99,7 @@ class OSProcessPipelineExecutionInstance(
           stdout=outputFd)
 
     self.processOutput = None
-    if outputPipeFds != None:
+    if outputPipeFds is not None:
 # Close the write side now.
       os.close(outputPipeFds[1])
       self.processOutput = TransformationProcessOutputStream(
@@ -124,7 +124,7 @@ class OSProcessPipelineExecutionInstance(
     of output stream descriptors."""
     if self.processState != OSProcessPipelineExecutionInstance.STATE_NOT_STARTED:
       raise Exception('Output manipulation only when not started yet')
-    if self.process != None:
+    if self.process is not None:
       raise Exception('No setting of output stream after previous ' \
           'setting or call to getProcessOutput')
     self.createProcess(processOutputStream)
@@ -132,7 +132,8 @@ class OSProcessPipelineExecutionInstance(
   def checkConnected(self):
     """Check if this process instance is already connected to
     an output, e.g. via getProcessOutput or setProcessOutputStream."""
-    if (self.processState == OSProcessPipelineExecutionInstance.STATE_NOT_STARTED) and (self.process is None):
+    if (self.processState == OSProcessPipelineExecutionInstance.STATE_NOT_STARTED) and \
+        (self.process is None):
       raise Exception('Operation mode not known while not fully connected')
 # Process instance only created when connected, so everything OK.
 
@@ -194,9 +195,11 @@ class OSProcessPipelineExecutionInstance(
     If there are any unreported pending errors from execution,
     this method will return True until doProcess() or stop() is
     called at least once."""
-    if self.processState in [OSProcessPipelineExecutionInstance.STATE_NOT_STARTED, OSProcessPipelineExecutionInstance.STATE_ENDED]:
+    if self.processState in [
+        OSProcessPipelineExecutionInstance.STATE_NOT_STARTED,
+        OSProcessPipelineExecutionInstance.STATE_ENDED]:
       return False
-    if self.processingException != None:
+    if self.processingException is not None:
 # There is a pending exception, which is cleared only in doProcess()
 # or stop(), so pretend that the process is still running.
       return True
@@ -248,8 +251,10 @@ class OSProcessPipelineExecutionInstance(
     if self.processState == OSProcessPipelineExecutionInstance.STATE_NOT_STARTED:
       raise Exception('Not started')
     if self.processState == OSProcessPipelineExecutionInstance.STATE_ENDED:
-      raise Exception('Already stopped')
-    if self.processingException != None:
+# This must be a logic error attempting to process data when
+# already stopped.
+      raise Exception('Process %s already stopped' % self.executable)
+    if self.processingException is not None:
       processingException = self.processingException
       self.processingException = None
 # We are dead here anyway, close inputs and outputs ignoring any
@@ -258,13 +263,13 @@ class OSProcessPipelineExecutionInstance(
       self.processState = OSProcessPipelineExecutionInstance.STATE_ENDED
       raise processingException
 
-    if self.inputPipe != None:
+    if self.inputPipe is not None:
       if len(self.upstreamProcessOutputBuffer) == 0:
         self.upstreamProcessOutputBuffer = self.upstreamProcessOutput.readData(1<<16)
         if self.upstreamProcessOutputBuffer is None:
           self.inputPipe.close()
           self.inputPipe = None
-      if ((self.upstreamProcessOutputBuffer != None) and
+      if ((self.upstreamProcessOutputBuffer is not None) and
           (len(self.upstreamProcessOutputBuffer) != 0)):
         writeLength = self.inputPipe.write(self.upstreamProcessOutputBuffer)
         if writeLength == len(self.upstreamProcessOutputBuffer):
@@ -285,7 +290,7 @@ class OSProcessPipelineExecutionInstance(
 # The upstream input can be ignored when really a file descriptor,
 # it is wired to this process for asynchronous use anyway. When
 # not a file descriptor, writing to the input pipe may block.
-    if self.inputPipe != None:
+    if self.inputPipe is not None:
       writeStreamList.append(self.inputPipe.fileno())
 
 
@@ -297,7 +302,7 @@ class OSProcessPipelineExecutionInstance(
     method is called while upstream did not close the upstream
     output stream yet."""
     readData = self.upstreamProcessOutput.readData(64)
-    if readData != None:
+    if readData is not None:
       if len(readData) == 0:
         self.processingException = Exception('Upstream did not finish yet, data might be lost')
       else:
@@ -308,7 +313,7 @@ class OSProcessPipelineExecutionInstance(
       self.upstreamProcessOutput.close()
     self.upstreamProcessOutput = None
 
-    if self.upstreamProcessOutputBuffer != None:
+    if self.upstreamProcessOutputBuffer is not None:
       self.processingException = Exception(
           'Output buffers to process not drained yet, %d bytes lost' %
               len(self.upstreamProcessOutputBuffer))
