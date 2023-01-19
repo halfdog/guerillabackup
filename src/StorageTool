@@ -871,6 +871,11 @@ class BackupDataElement():
       policyData.update(data)
     return policyData
 
+  def removePolicyData(self, policyName):
+    """Remove the policy data for a given policy name if it exists."""
+    if policyName in self.policyData:
+      del self.policyData[policyName]
+
   def initPolicyData(self, data):
     """Initialize the complete policy data of this backup data
     element. This function may only be called while there is
@@ -908,7 +913,7 @@ class BackupDataElement():
 
     if deleteFlag is None:
       if policyData:
-        self.getPolicyData.remove(BackupDataElement.DELETE_STATUS_POLICY)
+        self.removePolicyData(BackupDataElement.DELETE_STATUS_POLICY)
     else:
       if (policyData is not None) and (policyData != deleteFlag):
         raise Exception()

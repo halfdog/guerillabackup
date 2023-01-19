@@ -13,9 +13,11 @@ guerillabackup (0.4.0~rc-20230119) unstable; urgency=low
     * Removed anti-file-deletion protection left in code accidentally.
     * Fixed Interval policy status handling when applying retention
       policies.
+    * Fixed deletion mark handling with concurrent retention
+      policies.
     * Fixed error message typos.
 
- -- halfdog <me@halfdog.net>  Thu, 19 Jan 2023 11:34:38 +0000
+ -- halfdog <me@halfdog.net>  Thu, 19 Jan 2023 11:35:38 +0000
 
 guerillabackup (0.3.0) unstable; urgency=low
 
