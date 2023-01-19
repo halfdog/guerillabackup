@@ -120,10 +120,16 @@
     <para>To ease policy selection in large setups, policy inheritance
     can be used. A included configuration (see "Include" configuration
     parameter) may also define policies, which can extend or
-    override the policies from the parent configuration(s) when
-    they have a higher priority. To disable policy inheritance
-    a subconfiguration may add a "null" policy as first entry
-    in the Policy list.</para>
+    override the policies from the parent configuration(s) but
+    also policies defined just earlier in the same configuration.
+    The overriding policy definition has to have a higher priority,
+    otherwise it will be ignored. To disable policy inheritance
+    a subconfiguration may set the "Inherit" configuration parameter
+    to false (default is true). This will also prevent any policies
+    defined earlier in the very same configuration to be ignored.
+    Thus to disable inheritance for all sources in a configuration,
+    the first entry in the policy list should match all sources
+    (.*) and disable inheritance.</para>
 
     <para>Each policy defined in the StorageTool configuration
     file may also keep policy status information in the status
@@ -157,6 +163,7 @@
   "Policies": [
     {
       "Sources": "^(.*/)?root$",
+      "Inherit": false,
       "List": [
         {
           "Name": "Interval",

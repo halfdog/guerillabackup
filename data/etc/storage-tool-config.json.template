@@ -11,8 +11,8 @@
   "Policies": [
     {
       "Sources": "^(.*/)?root$",
+      "Inherit": true,
       "List": [
-        null,
         {
           "Name": "Interval",
           "Priority": 100,
