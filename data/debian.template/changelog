@@ -3,9 +3,11 @@ guerillabackup (0.4.0~rc-20230119) unstable; urgency=low
   Bugfixes:
   * BackupGenerator:
     * Fixed invalid executable path in systemd service templates.
+    * Fixed backup generation pipeline race condition on asynchronous
+      shutdown.
     * Applied pylint.
 
- -- halfdog <me@halfdog.net>  Thu, 19 Jan 2023 11:15:15 +0000
+ -- halfdog <me@halfdog.net>  Thu, 19 Jan 2023 11:30:01 +0000
 
 guerillabackup (0.3.0) unstable; urgency=low
 

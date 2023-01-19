@@ -342,7 +342,7 @@ def assertSourceUrlSpecificationConforming(sourceUrl):
   for urlPart in sourceUrl[1:].split('/'):
     if len(urlPart) == 0:
       raise Exception('No path part between slashes')
-    if (urlPart == '.') or (urlPart == '..'):
+    if urlPart in ('.', '..'):
       raise Exception('. and .. forbidden')
     for urlChar in urlPart:
       if urlChar not in '%-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz':
@@ -363,20 +363,20 @@ def getDefaultDownstreamPipeline(configContext, encryptionKeyName):
   downstreamPipelineElements = []
   compressionElement = configContext.get(
       'GeneralDefaultCompressionElement', None)
-  if compressionElement != None:
+  if compressionElement is not None:
     downstreamPipelineElements.append(compressionElement)
 
   encryptionElement = configContext.get('GeneralDefaultEncryptionElement', None)
-  if encryptionKeyName != None:
-    if encryptionElement != None:
+  if encryptionKeyName is not None:
+    if encryptionElement is not None:
       encryptionElement = encryptionElement.replaceKey(encryptionKeyName)
     else:
       encryptionCallArguments = GpgEncryptionPipelineElement.gpgDefaultCallArguments
-      if compressionElement != None:
+      if compressionElement is not None:
         encryptionCallArguments += ['--compress-algo', 'none']
       encryptionElement = GpgEncryptionPipelineElement(
           encryptionKeyName, encryptionCallArguments)
-  if encryptionElement != None:
+  if encryptionElement is not None:
     downstreamPipelineElements.append(encryptionElement)
   downstreamPipelineElements.append(DigestPipelineElement())
   return downstreamPipelineElements
@@ -392,7 +392,7 @@ def instantiateTransformationPipeline(
   element at first position creating the backup data internally.
   @param downstreamProcessOutputStream if None, enable this stream
   as output of the last pipeline element."""
-  if ((upstreamProcessOutput != None) and
+  if ((upstreamProcessOutput is not None) and
       (not isinstance(
           upstreamProcessOutput, TransformationProcessOutputInterface))):
     raise Exception('upstreamProcessOutput not an instance of TransformationProcessOutputInterface')
@@ -401,13 +401,13 @@ def instantiateTransformationPipeline(
   instanceList = []
   lastInstance = None
   for element in pipelineElements:
-    if lastInstance != None:
+    if lastInstance is not None:
       upstreamProcessOutput = lastInstance.getProcessOutput()
     instance = element.getExecutionInstance(upstreamProcessOutput)
     upstreamProcessOutput = None
     lastInstance = instance
     instanceList.append(instance)
-  if downstreamProcessOutputStream != None:
+  if downstreamProcessOutputStream is not None:
     lastInstance.setProcessOutputStream(downstreamProcessOutputStream)
   if doStartFlag:
     for instance in instanceList:
@@ -427,57 +427,63 @@ def runTransformationPipeline(pipelineInstances):
   @throws Exception when first failing pipeline element is detected.
   This will not terminate the whole pipeline, other elements have
   to be stopped explicitely."""
-  pollInstancesList = []
+
+# Keep list of still running synchronous instances.
+  syncInstancesList = []
   for instance in pipelineInstances:
     if not instance.isAsynchronous():
-      pollInstancesList.append(instance)
-# Run all the synchronous units.
-  while len(pollInstancesList) != 0:
+      syncInstancesList.append(instance)
+  while True:
+# Run all the synchronous units first.
     processState = -1
-    for instance in pollInstancesList:
+    for instance in syncInstancesList:
       result = instance.doProcess()
       processState = max(processState, result)
       if result < 0:
-        pollInstancesList.remove(instance)
+        if instance.isRunning():
+          raise Exception('Logic error')
+        syncInstancesList.remove(instance)
 # Fake state and pretend something was moved. Modifying the list
 # in loop might skip elements, thus cause invalid state information
 # aggregation.
         processState = 1
         break
+      if instance.isAsynchronous():
+# All synchronous IO was completed, the component may behave
+# now like an asynchronous one. Therefore remove it from the
+# list, otherwise we might spin here until the component stops
+# because it will not report any blocking file descriptors below,
+# thus skipping select() when there are no other blocking components
+# in syncInstancesList.
+        syncInstancesList.remove(instance)
+    if processState == -1:
+# There is no running synchronous instances, all remaining ones
+# are asynchronous and do not need select() for synchronous IO
+# data moving below.
+      break
     if processState != 0:
+# At least some data was moved, continue moving.
       continue
 
-# Not a single component was able to move data. This might be
-# a deadlock, but we cannot be sure. It might be a read operation
-# at the upstream side of the pipe or the downstream side write,
-# that cannot be performed without blocking, e.g. due to network
-# or filesystem IO issues. Update the state of all synchronous
+# Not a single synchronous instance was able to move data. This
+# is due to a blocking read operation at the upstream side of
+# the pipeline or the downstream side write, e.g. due to network
+# or filesystem IO blocking. Update the state of all synchronous
 # components and if all are still running, wait for any IO to
 # end blocking.
     readStreamList = []
     writeStreamList = []
-    shouldBlockFlag = True
-    for instance in pipelineInstances:
-# Ignore any instance not running. This state is only reached
-# after reporting any pending errors in a final doProcess() call.
-# When everything worked out as required to reach the stop state,
-# then all outputs will be closed anyway.
-      if not instance.isRunning():
-        continue
-      if instance.isAsynchronous():
-# Just trigger the method for asynchronous jobs. Any pending errors
-# will be reported but method will never block anyway.
-        result = instance.doProcess()
-        if result < 0:
-          shouldBlockFlag = False
-      else:
-        instance.getBlockingStreams(readStreamList, writeStreamList)
-    if not shouldBlockFlag:
-      continue
-# All asynchronous instances are still running, block on streams
-# if any.
-    select.select(readStreamList, writeStreamList, [], 1)
+    for instance in syncInstancesList:
+      instance.getBlockingStreams(readStreamList, writeStreamList)
+    if readStreamList or writeStreamList:
+# Wait for at least one stream from a synchronous instance to
+# be ready for IO. There might be none at all due to a former
+# synchronous component having finished handling all synchronous
+# IO.
+      select.select(readStreamList, writeStreamList, [], 1)
 
+# Only asynchronous instances remain (if any), so just wait until
+# each one of them has stopped.
   for instance in pipelineInstances:
     while instance.isRunning():
       time.sleep(1)
@@ -676,11 +682,11 @@ def getFileOpenerInformation(pathNameList, checkMode=OPENER_INFO_FAIL_ON_ERROR):
         else:
           pathNameInfo = resultList[pathNameIndex]
           indexPos = -1-len(pathNameInfo)
-          for index in range(0, len(pathNameInfo)):
-            if pathNameInfo[index][0] == procPid:
+          for index, entry in enumerate(pathNameInfo):
+            if entry[0] == procPid:
               indexPos = index
               break
-            if pathNameInfo[index][0] > procPid:
+            if entry[0] > procPid:
               indexPos = -1-index
               break
           if indexPos >= 0:
