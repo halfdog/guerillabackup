@@ -159,7 +159,9 @@ class PolicyTypeInterval(Policy):
       if currentPolicy is None:
 # This is the first element and default policy data was not copied
 # yet.
-        elem.updatePolicyData(PolicyTypeInterval.POLICY_NAME, self.config)
+        elem.updatePolicyData(
+            PolicyTypeInterval.POLICY_NAME,
+            {'Config': self.config})
         currentPolicy = self
       elemTime = elem.getDatetimeSeconds()
       if lastFullTime is None:
