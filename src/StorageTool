@@ -1144,6 +1144,9 @@ class StorageStatus():
 
     for sourceName, sourceStatus in self.trackedSources.items():
       policyList = self.config.getSourcePolicies(sourceName)
+      if len(policyList) == 0:
+        print('WARNING: no policies for "%s" in "%s"' % (
+            sourceName, self.config.getConfigFileName()), file=sys.stderr)
       policyNames = set()
       policyNames.add(BackupDataElement.DELETE_STATUS_POLICY)
       for policy in policyList:
