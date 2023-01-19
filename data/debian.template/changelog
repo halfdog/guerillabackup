@@ -2,6 +2,7 @@ guerillabackup (0.4.0~rc-20230119) unstable; urgency=low
 
   Features:
   * StorageTool:
+    * Added "Size" check policy to detect backups with abnormal size.
     * Improved messages for interval policy violations and how to fix.
     * Warn about files not having any applicable policies defined.
     * Made policy inheritance control more explicit, improved
@@ -22,7 +23,7 @@ guerillabackup (0.4.0~rc-20230119) unstable; urgency=low
       source.
     * Fixed error message typos.
 
- -- halfdog <me@halfdog.net>  Thu, 19 Jan 2023 14:01:01 +0000
+ -- halfdog <me@halfdog.net>  Thu, 19 Jan 2023 14:02:58 +0000
 
 guerillabackup (0.3.0) unstable; urgency=low
 

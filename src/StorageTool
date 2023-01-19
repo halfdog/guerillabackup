@@ -18,6 +18,7 @@ sys.path = sys.path[1:]+['/usr/lib/guerillabackup/lib', '/etc/guerillabackup/lib
 import guerillabackup.Utils
 from guerillabackup.storagetool.PolicyTypeInterval import PolicyTypeInterval
 from guerillabackup.storagetool.PolicyTypeLevelRetention import PolicyTypeLevelRetention
+from guerillabackup.storagetool.PolicyTypeSize import PolicyTypeSize
 
 
 class PolicyGroup():
@@ -41,7 +42,8 @@ class PolicyGroup():
     for policyConfig in groupConfig['List']:
       policy = {
           PolicyTypeInterval.POLICY_NAME: PolicyTypeInterval,
-          PolicyTypeLevelRetention.POLICY_NAME: PolicyTypeLevelRetention
+          PolicyTypeLevelRetention.POLICY_NAME: PolicyTypeLevelRetention,
+          PolicyTypeSize.POLICY_NAME: PolicyTypeSize
       }.get(policyConfig['Name'], None)
       if policy is None:
         raise Exception(
@@ -283,6 +285,7 @@ class BackupDataElement():
       raise Exception()
     self.type = elementType
     self.dataFileName = None
+    self.dataLength = None
     self.infoFileName = None
 # This dictionary contains policy data associated with this element.
 # The key is the name of the policy holding the data.
@@ -348,6 +351,12 @@ class BackupDataElement():
   def getType(self):
     """Get the type of this backup data element."""
     return self.type
+
+  def getDataLength(self):
+    """Get the length of the binary backup data of this element."""
+    if self.dataLength is None:
+      self.dataLength = os.stat(self.dataFileName).st_size
+    return self.dataLength
 
   def getStatusData(self):
     """Get the complete status data associated with this element.
@@ -551,6 +560,10 @@ class StorageStatus():
 # found in this storage as key and the BackupSourceStatus element
 # bundling all relevant information about the source.
     self.trackedSources = {}
+
+  def getConfig(self):
+    """Get the configuration managing this status."""
+    return self.config
 
   def getStatusFileName(self):
     """Get the file name holding this backup status data."""

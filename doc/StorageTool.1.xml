@@ -33,7 +33,7 @@
       </author>
     </authorgroup>
     <copyright>
-      <year>2022</year>
+      <year>2022-2023</year>
       <holder>&dhusername;</holder>
     </copyright>
     <legalnotice>
@@ -284,6 +284,152 @@
           1, 4, 7, 10 due to "AlignModulus" and "AlignValue".
           Hence the first backup in January, April, ... should
           be kept.</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term><emphasis remap="B">Size:</emphasis></term>
+        <listitem>
+          <para>This policy checks that backup data sizes are
+          as expected as size changes may indicate problems, e.g.
+          a size increase due to archives, database dumps, local
+          file backups ... forgotten by the administrator (thus
+          wasting backup space but sometimes also causing security
+          issues due to lack of as strict access permissions
+          on those files compared to their source), size increase
+          due to rampant processes filling up database tables
+          or log files in retry loops (also monitoring should
+          catch that), core dumps accumulating, ...</para>
+
+          <para>A "Size" policy can be defined for both full and
+          incremental backups. For each backup type, the accepted
+          size range can be defined by absolute or relative values.
+          Without providing an expected size, the size of the
+          first backup of that type seen is used. Therefore for
+          servers without accumulating data, following policy
+          could be defined:</para>
+
+          <programlisting>
+...
+  "Policies": [
+    {
+      "Sources": "^(.*/)?root$",
+      "List": [
+        {
+          "Name": "Size",
+          "Priority": 0,
+          "FullSizeMinRel": 0.9,
+          "FullSizeMaxRel": 1.1,
+          "IncSizeMin": 100000,
+          "IncSizeMaxRel": 10.0
+        }, {
+...</programlisting>
+
+          <para>This configuration will check sizes of "root"
+          backups using the first full and incremental size as
+          reference. Full backups may vary in size between 90%
+          and 110% while incremental backups have to be at least
+          100kb large but may vary 10-fold in size. All supported
+          policy parameters are:</para>
+
+<variablelist>
+  <varlistentry>
+    <term><option>FullSizeExpect <replaceable>[size (int)]</replaceable></option></term>
+    <listitem>
+      <para>Specify the expected full backup size. When missing
+      the size of first full backup seen is used as default.</para>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><option>FullSizeMax <replaceable>[size (int)]</replaceable></option></term>
+    <listitem>
+      <para>Specify the absolute maximum backup size. You cannot
+use "FullSizeMaxRel" at the same time.</para>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><option>FullSizeMin <replaceable>[size (int)]</replaceable></option></term>
+    <listitem>
+      <para>Specify the absolute minimum backup size. You cannot
+use "FullSizeMinRel" at the same time.</para>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><option>IncSizeExpect, IncSizeMax, IncSizeMin <replaceable>[size (int)]</replaceable></option></term>
+    <listitem>
+      <para>Same as "Full..." parameters just for incremental
+      backups. See above.</para>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><option>FullSizeMaxRel <replaceable>[ratio (float)]</replaceable></option></term>
+    <listitem>
+      <para>Specify the maximum backup size in relation to the
+      expected size (see "FullSizeExpect"). You cannot use "FullSizeMax"
+      at the same time.</para>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><option>FullSizeMinRel <replaceable>[ratio (float)]</replaceable></option></term>
+    <listitem>
+      <para>Specify the minimum backup size in relation to the
+      expected size (see "FullSizeExpect"). You cannot use "FullSizeMin"
+      at the same time.</para>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><option>IncSizeExpectRel <replaceable>[ratio (float)]</replaceable></option></term>
+    <listitem>
+      <para>Specify the expected incremental backup size in relation
+      to the expected full backup size (see "FullSizeExpect").
+      You cannot use "IncSizeExpect" at the same time.</para>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><option>IncSizeMaxRel, IncSizeMinRel <replaceable>[ratio (float)]</replaceable></option></term>
+    <listitem>
+      <para>Same as "Full..." parameters just for incremental
+      backups. See above.</para>
+    </listitem>
+  </varlistentry>
+</variablelist>
+
+          <para>When policy validation fails for a given source,
+          the policy configuration may be adjusted but also the
+          violation may be ignored by updating the check status.
+          Thus the validation error will not be reported any
+          more in the next run. The status data in that case
+          may look like:</para>
+
+          <programlisting>
+...
+  "20200102000000-root-full": {
+    "Size": {
+      "Ignore": true
+    }
+  },
+...</programlisting>
+
+          <para>While above is fine to ignore singular policy
+          violations, also the policy itself may be adjusted.
+          This is useful when e.g. the size of backups changed
+          due to installing of new software or services. The
+          updated policy configuration can then be attached
+          to the first element it should apply to:</para>
+
+          <programlisting>
+...
+  "20200102000000-root-full": {
+    "Size": {
+      "Config": {
+        "FullSizeExpect": 234567890,
+        "FullSizeMinRel": 0.9,
+        "FullSizeMaxRel": 1.1,
+        "IncSizeMin": 100000,
+        "IncSizeMaxRel": 10.0
+      }
+    }
+  },
+...</programlisting>
         </listitem>
       </varlistentry>
     </variablelist>
