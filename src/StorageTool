@@ -142,9 +142,11 @@ class PolicyTypeInterval(Policy):
         for key in policyData.keys():
           if key not in ('Config', 'Ignore', 'LastFull', 'LastInc'):
             raise Exception(
-                'Policy status configuration of "%s" corrupted: %s' % (
-                    elem.getElementName(), repr(policyData)))
-
+                'Policy status configuration for "%s" in ' \
+                '"%s" corrupted: %s' % (
+                    elem.getElementName(),
+                    sourceStatus.getStorageStatus().getStatusFileName(),
+                    repr(policyData)))
         if 'LastFull' in policyData:
           lastFullTime = policyData['LastFull']
           lastIncTime = policyData['LastInc']
@@ -188,6 +190,10 @@ class PolicyTypeInterval(Policy):
                       sourceStatus.getSourceName(),
                       lastElement.getElementName(),
                       elem.getElementName()), file=sys.stderr)
+            else:
+              fullValidationOkFlag = True
+
+            if not fullValidationOkFlag:
               print(
                   'No interactive/automatic policy or ' \
                   'status update, consider adding this ' \
@@ -196,8 +202,6 @@ class PolicyTypeInterval(Policy):
                       json.dumps(
                           {elem.getElementName(): {'Interval': {'Ignore': 'full'}}}, indent=2)
                   ), file=sys.stderr)
-            else:
-              fullValidationOkFlag = True
           lastFullTime = elemTime
         else:
 # This is an incremental backup, so incremental interval policy
