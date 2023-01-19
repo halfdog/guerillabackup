@@ -1064,6 +1064,8 @@ class StorageStatus():
     sourceName = match.group('name')
     if nameStartPos != 0:
       sourceName = relFileName[:nameStartPos] + sourceName
+    if sourceName not in self.trackedSources:
+      return None
     sourceStatus = self.trackedSources[sourceName]
     return sourceStatus.findElementByKey(
         match.group('datetime'), match.group('type'))
