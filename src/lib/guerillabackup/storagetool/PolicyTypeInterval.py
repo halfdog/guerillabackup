@@ -1,6 +1,9 @@
 """This module provides support for the backup interval checking
 policy."""
 
+import json
+import sys
+
 import guerillabackup.storagetool.Policy
 
 class PolicyTypeInterval(guerillabackup.storagetool.Policy.Policy):
