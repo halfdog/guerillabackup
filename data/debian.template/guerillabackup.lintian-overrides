@@ -5,5 +5,8 @@ guerillabackup binary: non-standard-dir-perm
 # package in an otherwise empty directory so that modifying
 # the Python search path to include "lib" will not include any
 # other files from this or other packages in the search path.
-guerillabackup: repeated-path-segment lib usr/lib/guerillabackup/lib/
-guerillabackup: repeated-path-segment guerillabackup usr/lib/guerillabackup/lib/guerillabackup/
+guerillabackup binary: repeated-path-segment guerillabackup [usr/lib/guerillabackup/lib/guerillabackup/]
+guerillabackup binary : repeated-path-segment lib [usr/lib/guerillabackup/lib/]
+# Currently only systemd startup is provided, therefore ignore
+# the warning but document it here.
+guerillabackup binary: package-supports-alternative-init-but-no-init.d-script
