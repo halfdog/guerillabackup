@@ -14,7 +14,7 @@
 # This is the default runtime data directory for all components.
 # It is used to create sockets, PID files and similar, that need
 # not to be preserved between reboots.
-# GeneralRuntimeDataDir = '/var/run/guerillabackup'
+# GeneralRuntimeDataDir = '/run/guerillabackup'
 
 # This parameter defines the default pipeline element to use to
 # compress backup data of any kind before sending it to downstream

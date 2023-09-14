@@ -10,7 +10,7 @@ import time
 CONFIG_GENERAL_PERSISTENCY_BASE_DIR_KEY = 'GeneralPersistencyBaseDir'
 CONFIG_GENERAL_PERSISTENCY_BASE_DIR_DEFAULT = '/var/lib/guerillabackup/state'
 CONFIG_GENERAL_RUNTIME_DATA_DIR_KEY = 'GeneralRuntimeDataDir'
-CONFIG_GENERAL_RUNTIME_DATA_DIR_DEFAULT = '/var/run/guerillabackup'
+CONFIG_GENERAL_RUNTIME_DATA_DIR_DEFAULT = '/run/guerillabackup'
 
 CONFIG_GENERAL_DEBUG_TEST_MODE_KEY = 'GeneralDebugTestModeFlag'
 

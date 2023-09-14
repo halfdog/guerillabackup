@@ -26,10 +26,10 @@ set -e
 # This is required as "dh_systemd_start" is disabled in rules
 # file, thus not restarting the services. See rules file for more
 # information.
-if test -d /run/systemd/system && test -e /var/run/guerillabackup.dpkg-update.run-state; then
+if test -d /run/systemd/system && test -e /run/guerillabackup.dpkg-update.run-state; then
   daemonReloadedFlag="false"
   for serviceName in guerillabackup-generator.service guerillabackup-transfer.service; do
-    if grep -q -e "${serviceName}: active" -- /var/run/guerillabackup.dpkg-update.run-state; then
+    if grep -q -e "${serviceName}: active" -- /run/guerillabackup.dpkg-update.run-state; then
       if [ "${daemonReloadedFlag}" != "true" ]; then
         systemctl --system daemon-reload >/dev/null || true
         daemonReloadedFlag="true"
@@ -38,5 +38,5 @@ if test -d /run/systemd/system && test -e /var/run/guerillabackup.dpkg-update.ru
     fi
   done
 fi
-rm -f -- /var/run/guerillabackup.dpkg-update.run-state
+rm -f -- /run/guerillabackup.dpkg-update.run-state
 exit 0

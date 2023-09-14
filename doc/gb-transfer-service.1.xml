@@ -70,17 +70,17 @@
       with other gb-transfer-service instances and application of
       storage and retrieval policies for data synchronisation.</para>
     <para>The network part uses a local (AF_UNIX) socket to listen
-    for incoming connections (see /var/run/guerillabackup/transfer.socket
+    for incoming connections (see /run/guerillabackup/transfer.socket
     below). There is no authentication magic or likely-to-be-flawed
     custom-made crypto included in that part: any process allowed
     to open the socket can talk the protocol. For connectivity
     and authentication, use your favourite (trusted) tools. Good
     starting points are socat with OPENSSL X509 client/server
     certificate checks on one side and 
-    UNIX-CONNECT:/var/run/guerillabackup/transfer.socket for the
+    UNIX-CONNECT:/run/guerillabackup/transfer.socket for the
     other one. When using SSH to forward such connections, you
     should consider key-based authentication with command forcing
-    (command="/usr/bin/socat - UNIX-CONNECT:/var/run/guerillabackup/transfer.socket")
+    (command="/usr/bin/socat - UNIX-CONNECT:/run/guerillabackup/transfer.socket")
     and default security options (restrict).</para>
 
     <para>The policies are the other domain of the gb-transfer-service.
@@ -139,12 +139,12 @@
         </listitem>
       </varlistentry>
       <varlistentry>
-        <term><filename>/var/run/guerillabackup/transfer.socket</filename></term>
+        <term><filename>/run/guerillabackup/transfer.socket</filename></term>
         <listitem>
           <para>This is the default socket file name to connect
           two gb-transfer-service instances. The path can be changed
           by modification of "GeneralRuntimeDataDir" configuration
-          property from default "/var/run/guerillabackup". By
+          property from default "/run/guerillabackup". By
           default, the socket is only accessible to privileged
           users and the user, who created it (mode 0600). You
           might change permissions after startup to grant access

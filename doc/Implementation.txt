@@ -33,10 +33,10 @@ Directory structure:
     data for a given backup unit.
   * state/agents: Directory to store additional information of
     local backup data processing or remote transfer agents.
-* /var/run/guerillabackup: This directory is used to keep data,
-  only needed while guerillabackup tools are running. This data
-  can be discarded on reboot.
-  * transfer.socket: Default socket location for TransferServices.
+* /run/guerillabackup: This directory is used to keep data, only
+  needed while guerillabackup tools are running. This data can
+  be discarded on reboot.
+  * transfer.socket: Default socket location for "gb-transfer-service".
 
 
 Library functions:

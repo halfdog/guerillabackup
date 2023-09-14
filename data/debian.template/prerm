@@ -17,10 +17,10 @@ set -e
 # the debian-policy package
 
 # Capture the state of all currently running services before stop.
-rm -f -- /var/run/guerillabackup.dpkg-update.run-state
+rm -f -- /run/guerillabackup.dpkg-update.run-state
 if test -d /run/systemd/system; then
   for serviceName in guerillabackup-generator.service guerillabackup-transfer.service; do
-    echo "${serviceName}: $(systemctl is-active "${serviceName}")" >> /var/run/guerillabackup.dpkg-update.run-state
+    echo "${serviceName}: $(systemctl is-active "${serviceName}")" >> /run/guerillabackup.dpkg-update.run-state
     deb-systemd-invoke stop "${serviceName}" > /dev/null
   done
 fi
