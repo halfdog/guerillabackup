@@ -823,10 +823,23 @@ class StorageTool():
         self.configFileName = sys.argv[argPos]
         argPos += 1
         continue
+      if argName == '--Help':
+        print(
+            'Usage: %s [options]\n' \
+            '* --Config [file]: Use this configuration file not the default\n' \
+            '  file at "/etc/guerillabackup/storage-tool-config.json".\n' \
+            '* --DryRun: Just report check results but do not ' \
+            'modify storage.\n' \
+            '* --Help: This output' % sys.argv[0],
+            file=sys.stderr)
+        sys.exit(0)
       if argName == '--DryRun':
         StorageTool.INTERACTIVE_MODE = 'force-no'
         continue
-      raise Exception('Unknown parameter "%s"' % argName)
+      print(
+          'Unknown parameter "%s", use "--Help" or see man page.' % argName,
+              file=sys.stderr)
+      sys.exit(1)
 
 
   def loadConfiguration(self):
