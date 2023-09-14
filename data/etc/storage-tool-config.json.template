@@ -1,5 +1,5 @@
-# This is the StorageTool configuration template. See also the
-# StorageTool man page for more information.
+# This is the gb-storage-tool configuration template. See also the
+# gb-storage-tool man page for more information.
 
 {
 # These are the default policies to apply to resources in the

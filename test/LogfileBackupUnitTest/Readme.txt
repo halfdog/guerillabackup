@@ -26,6 +26,6 @@ cp -a -- "${tmpDir}/logs/test.log.2.gz" "${tmpDir}/logs/test.log.6.gz"
 cp -a -- "${tmpDir}/logs/test.log.2.gz" "${tmpDir}/logs/test.log.7.gz"
 
 echo "Starting LogfileBackupUnit testing in ${tmpDir}"
-"${projectBaseDir}/src/BackupGenerator" --ConfigDir "${tmpDir}/config"
+"${projectBaseDir}/src/gb-backup-generator" --ConfigDir "${tmpDir}/config"
 
 sed -i -r -e "s:\[[0-9]+,:[123,:g" -- "${tmpDir}/state/generators/LogfileBackupUnit/state.current"

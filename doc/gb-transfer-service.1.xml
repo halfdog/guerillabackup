@@ -13,8 +13,7 @@
   <!ENTITY dhsection   "1">
   <!-- TITLE should be something like "User commands" or similar (see
        http://www.tldp.org/HOWTO/Man-Page/q2.html). -->
-  <!ENTITY dhtitle     "TransferService User Manual">
-  <!ENTITY dhucpackage "TRANSFERSERVICE">
+  <!ENTITY dhtitle     "User Manual">
   <!ENTITY dhpackage   "guerillabackup">
 ]>
 
@@ -48,27 +47,27 @@
     </legalnotice>
   </refentryinfo>
   <refmeta>
-    <refentrytitle>TRANSFERSERVICE</refentrytitle>
+    <refentrytitle>GB-TRANSFER-SERVICE</refentrytitle>
     <manvolnum>&dhsection;</manvolnum>
   </refmeta>
   <refnamediv>
-    <refname>TransferService</refname>
+    <refname>gb-transfer-service</refname>
     <refpurpose>Synchronise guerillabackup backup data storages</refpurpose>
   </refnamediv>
   <refsynopsisdiv>
     <cmdsynopsis>
-      <command>TransferService</command>
+      <command>gb-transfer-service</command>
       <!-- These are several examples, how syntaxes could look -->
       <arg choice="plain"><option>--Config <replaceable>file</replaceable></option></arg>
     </cmdsynopsis>
   </refsynopsisdiv>
   <refsect1 id="description">
     <title>DESCRIPTION</title>
-    <para>This is the manual page for the <command>TransferService</command>
+    <para>This is the manual page for the <command>gb-transfer-service</command>
       command. For more details see packaged documentation at
       /usr/share/doc/guerillabackup. The service has two main
       purposes: providing a stream-based protocol for interaction
-      with other TransferService instances and application of
+      with other gb-transfer-service instances and application of
       storage and retrieval policies for data synchronisation.</para>
     <para>The network part uses a local (AF_UNIX) socket to listen
     for incoming connections (see /var/run/guerillabackup/transfer.socket
@@ -84,13 +83,13 @@
     (command="/usr/bin/socat - UNIX-CONNECT:/var/run/guerillabackup/transfer.socket")
     and default security options (restrict).</para>
 
-    <para>The policies are the other domain of the TransferService.
+    <para>The policies are the other domain of the gb-transfer-service.
     They define the authorisation rules granting access to backup
     data elements but do NOT grant access to the remote file system
     as such or allow creation or restore of backups. That is the
-    domain of BackupGenerator tool. The policy also defines, which
+    domain of gb-backup-generator tool. The policy also defines, which
     backup elements should be copied or moved to other storages.
-    Each TransferService may have two polices: one defining, what
+    Each gb-transfer-service may have two polices: one defining, what
     should be sent to other instances (sender policy) and what
     should be received (receiver policy). Without defining a policy
     for a transfer direction, no data will be sent in that direction.
@@ -134,7 +133,7 @@
           tools. Use /etc/guerillabackup/config.template to create
           it. The template also contains the documentation for
           each available parameter. The most relevant parameters
-          for TransferService are TransferServiceStorageBaseDir,
+          for gb-transfer-service are TransferServiceStorageBaseDir,
           TransferReceiverPolicyClass, TransferReceiverPolicyInitArgs,
           TransferSenderPolicyClass, TransferSenderPolicyInitArgs.</para>
         </listitem>
@@ -143,7 +142,7 @@
         <term><filename>/var/run/guerillabackup/transfer.socket</filename></term>
         <listitem>
           <para>This is the default socket file name to connect
-          two TransferService instances. The path can be changed
+          two gb-transfer-service instances. The path can be changed
           by modification of "GeneralRuntimeDataDir" configuration
           property from default "/var/run/guerillabackup". By
           default, the socket is only accessible to privileged
@@ -169,7 +168,7 @@
     <title>SEE ALSO</title>
 <!-- In alpabetical order. -->
     <para>
-      <citerefentry><refentrytitle>BackupGenerator</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+      <citerefentry><refentrytitle>gb-backup-generator</refentrytitle><manvolnum>1</manvolnum></citerefentry>
     </para>
   </refsect1>
 </refentry>

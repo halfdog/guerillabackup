@@ -1,3 +1,3 @@
-debian/BackupGenerator.1
-debian/StorageTool.1
-debian/TransferService.1
+debian/gb-backup-generator.1
+debian/gb-storage-tool.1
+debian/gb-transfer-service.1

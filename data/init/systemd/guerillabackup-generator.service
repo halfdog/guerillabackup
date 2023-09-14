@@ -1,11 +1,11 @@
 [Unit]
 Description="Guerillabackup backup generator service"
-Documentation=man:BackupGenerator(1)
+Documentation=man:gb-backup-generator(1)
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/BackupGenerator
+ExecStart=/usr/bin/gb-backup-generator
 Restart=always
 
 [Install]

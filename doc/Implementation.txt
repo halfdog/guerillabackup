@@ -120,22 +120,22 @@ Policy Based Data Synchronisation:
 ==================================
 
 To support various requirements, e.g. decentralised backup generation
-with secure secure spooling, asynchronous transfers, a the "TransferService",
+with secure secure spooling, asynchronous transfers, a the "gb-transfer-service",
 a component for synchronisation is required, see "doc/Design.txt"
 section "Synchronisation" for design information.
 
-The implementation of "TransferService" orchestrates all components
+The implementation of "gb-transfer-service" orchestrates all components
 required related to following functional blocks:
 
 * ConnectorService: This service provides functions to establish
-  connectivity to other "TransferService" instances. Currently
+  connectivity to other "gb-transfer-service" instances. Currently
   only "SocketConnectorService" together with protocol handler
   "JsonStreamServerProtocolRequestHandler" is supported. The
   service has to care about authentication and basic service
   access authorisation.
 
-* Policies: Policies define, how the "TransferService" should
-  interact with other "TransferService" instances. There are
+* Policies: Policies define, how the "gb-transfer-service" should
+  interact with other "gb-transfer-service" instances. There are
   two types of policies, "ReceiverTransferPolicy" for incoming
   transfers and "SenderTransferPolicy" for transmitting data.
   See "ReceiverStoreDataTransferPolicy", "SenderMoveDataTransferPolicy",
@@ -237,8 +237,8 @@ any more: everything relevant for authorisation has to be provided
 by the ConnectorService and stored to the TransferContext.
 
 
-StorageTool:
-============
+gb-storage-tool:
+============:
 
 The workflow described in "Design.txt" is implemented as such:
 

@@ -15,14 +15,14 @@ mkdir -- "${tmpDir}/config" "${tmpDir}/data"
 cp -a -- "${projectBaseDir}/test/ReceiverOnlyTransferService/config" "${tmpDir}/config"
 sed -i -r -e "s:\[TmpDir\]:${tmpDir}:g" -- "${tmpDir}/config/config"
 echo "Listening on socket ${tmpDir}/run/transfer.socket"
-"${projectBaseDir}/src/TransferService" --Config "${tmpDir}/config/config"
+"${projectBaseDir}/src/gb-transfer-service" --Config "${tmpDir}/config/config"
 
-Connect the TransferService to an instance with a sending policy,
+Connect the gb-transfer-service to an instance with a sending policy,
 e.g. see SenderOnlyTransferService testcase.
 
 socat "UNIX-CONNECT:${tmpDir}/run/transfer.socket" "UNIX-CONNECT:...other socket"
 
-Terminate the TransferService using [Ctrl]-C and check, that backups
+Terminate the gb-transfer-service using [Ctrl]-C and check, that backups
 were transferred as expected.
 
 ls -al -- "${tmpDir}/data"

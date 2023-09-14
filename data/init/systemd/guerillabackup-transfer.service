@@ -1,11 +1,11 @@
 [Unit]
 Description="Guerillabackup data transfer service"
-Documentation=man:TransferService(1)
+Documentation=man:gb-transfer-service(1)
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/TransferService
+ExecStart=/usr/bin/gb-transfer-service
 Restart=always
 
 [Install]

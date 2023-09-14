@@ -55,7 +55,7 @@ might be the best:
 * doc/Implementation.txt: GuerillaBackup implementation documentation
 * doc/Installation.txt: GuerillaBackup end user installation
   documentation
-* Manual pages: doc/BackupGenerator.1.xml and doc/TransferService.1.xml
-  here on github, usually "man (BackupGenerator|TransferService)"
+* Manual pages: doc/gb-backup-generator.1.xml and doc/gb-transfer-service.1.xml
+  here on github, usually "man (gb-backup-generator|gb-transfer-service)"
   when installed from package repository
 * doc/FAQs.txt: GuerillaBackup frequently asked questions

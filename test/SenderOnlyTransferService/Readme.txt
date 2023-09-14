@@ -17,7 +17,7 @@ cp -a -- "${projectBaseDir}/test/SenderOnlyTransferService/config" "${projectBas
 sed -i -r -e "s:\[TmpDir\]:${tmpDir}:g" -- "${tmpDir}/config/config" "${tmpDir}/config/units/LogfileBackupUnit.config" "${tmpDir}/config/units/TarBackupUnit.config"
 ln -s -- "${projectBaseDir}/src/lib/guerillabackup/LogfileBackupUnit.py" "${tmpDir}/config/units/LogfileBackupUnit"
 ln -s -- "${projectBaseDir}/src/lib/guerillabackup/TarBackupUnit.py" "${tmpDir}/config/units/TarBackupUnit"
-"${projectBaseDir}/src/BackupGenerator" --ConfigDir "${tmpDir}/config"
+"${projectBaseDir}/src/gb-backup-generator" --ConfigDir "${tmpDir}/config"
 
 Terminate the generator using [Ctrl]-C and check, that backups
 were created.
@@ -30,13 +30,13 @@ data files.
 echo "corrupted!" >> "${tmpDir}/data/.....data"
 
 
-TransferService invocation:
-===========================
+gb-transfer-service invocation:
+============================
 
 Start the service:
 
 echo "Listening on socket ${tmpDir}/run/transfer.socket"
-"${projectBaseDir}/src/TransferService" --Config "${tmpDir}/config/config"
+"${projectBaseDir}/src/gb-transfer-service" --Config "${tmpDir}/config/config"
 
 Send test requests using the fake client: IO-handling is simplified,
 so just press return on empty lines until expected response was

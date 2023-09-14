@@ -43,7 +43,7 @@ those steps should be considered:
 
 * 1) Locate the (one) storage of the backup to restore:
 
-In distributed setups, "TransferService" (see man page) will
+In distributed setups, "gb-transfer-service" (see man page) will
 have synchronized the backups between one or more storages according
 to the transfer policies in place. In small environments you
 might be able to locate the data checking your configuration.

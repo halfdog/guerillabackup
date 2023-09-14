@@ -27,7 +27,7 @@ See "/etc/guerillabackup/config.template" template file for extensive
 comments regarding each parameter.
 
 
-Configuration of BackupGenerator:
+Configuration of gb-backup-generator:
 =================================
 
 * Configure generator units:
@@ -37,7 +37,7 @@ templates for all available units. The documentation for unit
 configuration parameters can be found within the template itself.
 
 To enable a unit, the configuration has to be created and the
-unit code to be activated. See "BackupGenerator" manual page for
+unit code to be activated. See "gb-backup-generator" manual page for
 more details.
 
   * Enable a default logfile archiving component:
@@ -59,7 +59,7 @@ configuration file.
 
 Start the backup generator directly:
 
-/usr/lib/guerillabackup/BackupGenerator
+/usr/bin/gb-backup-generator
 
 The tool should not emit any errors during normal operation while
 running. After your CPU is idle, check that all backup volumes
@@ -86,12 +86,12 @@ cp data/init/upstart/guerillabackup.conf /etc/init/guerillabackup.conf
   * As cronjob after reboot:
 
 cat <<EOF > /etc/cron.d/guerillabackup
-@reboot root	(/usr/lib/guerillabackup/BackupGenerator < /dev/null >> /var/log/guerillabackup.log 2>&1 &)
+@reboot root	(/usr/bin/gb-backup-generator < /dev/null >> /var/log/guerillabackup.log 2>&1 &)
 EOF
 
 
-Configuration of TransferService:
-=================================
+Configuration of gb-transfer-service:
+==================================
 
 * Configure the service:
 
@@ -127,16 +127,16 @@ The receiver policies have to be enabled also by enabling
 
 The service is then started using
 
-/usr/lib/guerillabackup/TransferService --Config [configfile]
+/usr/bin/gb-transfer-service --Config [configfile]
 
 * Automatic startup:
 
-Activation is similar to "Configuration of BackupGenerator", only
+Activation is similar to "Configuration of gb-backup-generator", only
 the systemd unit name "guerillabackup-transfer.service" has to
 be used for systemd.
 
 * Initiate the transfer:
 
 Transfer will start as soon as a connection between the two
-TransferService instances is established. See "TransferService"
+gb-transfer-service instances is established. See "gb-transfer-service"
 manual page for more information on that.

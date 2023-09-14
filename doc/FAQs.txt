@@ -37,16 +37,16 @@ the GnuPG encryption example. See "SoftwareOperation.txt" for
 some answers regarding restore procedures.
 
 
-BackupGenerator:
-================
+gb-backup-generator:
+=================
 
 * Q: Where do I find generated archives and backups?
 
-A: When using only "BackupGenerator" without any transfers configured
-(see "TransferService"), you will find them at the sink location
+A: When using only "gb-backup-generator" without any transfers configured
+(see "gb-transfer-service"), you will find them at the sink location
 you configured when creating your generator configuration. Starting
 from a default configuration, you will usually use a file system
-sink storing to "/var/lib/guerillabackup/data". See "BackupGenerator"
+sink storing to "/var/lib/guerillabackup/data". See "gb-backup-generator"
 man page on general generator configuration and configuration
 sections in "/usr/share/doc/guerillabackup/Installation.txt".
 
@@ -71,12 +71,12 @@ information). Define your protection levels, generate the required
 keys and install them where needed.
 
 
-TransferService:
-================
+gb-transfer-service:
+=================
 
 * Q: How do both sides authenticate?
 
-A: According specification "TransferService" implementation creates
+A: According specification "gb-transfer-service" implementation creates
 an UNIX domain socket which can be protected by standard means.
 In default configuration it can only be accessed by user root.
 To grant access to that socket remotely use the very same techniques
@@ -85,12 +85,12 @@ e.g. to forward the UNIX domain socket via SSH both on interactive
 or non-interactive connections (depends on your use case, see
 man "ssh", "-L" option) or use "socat UNIX-CONNECT:... OPENSSL"
 to use PKI/certificate based access control and data encryption.
-See "TransferService" man page for more information.
+See "gb-transfer-service" man page for more information.
 
 
 * Q: Which network protocols are supported?
 
-A: "TransferService" requires bidirectional communication but
+A: "gb-transfer-service" requires bidirectional communication but
 does not aim to reimplement all the high-quality network communication
 tools out there already. Instead it provides means to easily
 integrate your preferred tools for network tunneling, network
