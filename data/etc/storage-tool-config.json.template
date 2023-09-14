@@ -68,7 +68,7 @@
         }
       ]
     }
-  },
+  ],
 # This is the data directory for this configuration. All files
 # not within the data directory of another (sub-)configuration
 # have to be sane backup resource files or otherwise covered
@@ -82,12 +82,12 @@
 
 # This is the status file defining the current status associated
 # with files in "DataDir" when required.
-  "Status": "/var/lib/guerillabackup/state/storage-tool-status.json",
+  "Status": "/var/lib/guerillabackup/state/storage-tool-status.json"
 
 # Include a list of sub-configuration files for backup storages
 # spread out over multiple unrelated data directories or to split
 # one huge configuration into multiple smaller ones.
-  "Include": [
-    "/...[another storage].../storage-tool-config.json"
-  ]
+#  "Include": [
+#    "/...[another storage].../storage-tool-config.json"
+#  ]
 }
