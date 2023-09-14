@@ -620,9 +620,10 @@ class StorageStatus():
           relFileName[nameStartPos:])
       if match is None:
         print(
-            'File "%s" should be ignored by config "%s".' % (
+            'File "%s" (absolute "%s") should be ignored by ' \
+            'config "%s".' % (
                 fileInfo.getConfig().getDataDirectoryRelativePath(fileName),
-                fileInfo.getConfig().getConfigFileName()),
+                fileName, fileInfo.getConfig().getConfigFileName()),
             file=sys.stderr)
         continue
       sourceName = match.group('name')
