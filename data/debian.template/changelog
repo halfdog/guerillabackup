@@ -1,3 +1,20 @@
+guerillabackup (0.5.0) unstable; urgency=low
+
+  Features:
+  * Added systemd unit hardening.
+  Refactoring:
+  * Renamed binaries, pathnames according to Debian package inclusion
+    recommendations.
+  * Removed obsolete "/var/run" directories.
+  Bugfixes:
+  * gb-backup-generator:
+    * Provide working default configuration.
+  * gb-storage-tool:
+    * Avoid Exception, use exit(1) on error instead.
+    * Improved error message.
+
+ -- halfdog <me@halfdog.net>  Thu, 14 Sep 2023 21:00:00 +0000
+
 guerillabackup (0.4.0) unstable; urgency=low
 
   Features:

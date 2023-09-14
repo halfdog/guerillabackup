@@ -1,6 +1,6 @@
-guerillabackup (0.0.0) unstable; urgency=low
+guerillabackup (0.5.0) unstable; urgency=low
 
-  This is the initial release of guerillabackup. See
-  /usr/share/doc/guerillabackup/changelog.gz for list of features.
+  A general overhaul of package structure was done to improve
+  compatibility with Debian packaging standards.
 
- -- halfdog <me@halfdog.net>  Fri, 30 Dec 2016 00:00:00 +0000
+ -- halfdog <me@halfdog.net>  Thu, 14 Sep 2023 21:00:00 +0000
