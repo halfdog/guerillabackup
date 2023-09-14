@@ -8,5 +8,28 @@ Type=simple
 ExecStart=/usr/bin/gb-backup-generator
 Restart=always
 
+# Enable strict hardening by default: the settings here should
+# be compatible with the backup generator units provided by the
+# software package, but non-standard units may require these
+# settings to be relaxed.
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# Do not provide a private view on devices as usually the devices
+# should also end up unmodified in the backup when included by
+# the backup source selection.
+PrivateDevices=false
+# Do not exclude the temporary directories from backup here but
+# using the source selection.
+PrivateTmp=false
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=full
+RestrictNamespaces=true
+RestrictRealtime=true
+
 [Install]
 WantedBy=multi-user.target

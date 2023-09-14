@@ -8,5 +8,20 @@ Type=simple
 ExecStart=/usr/bin/gb-transfer-service
 Restart=always
 
+# Enable strict hardening by default.
+LockPersonality=true
+MemoryDenyWriteExecute=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=full
+RestrictNamespaces=true
+RestrictRealtime=true
+
 [Install]
 WantedBy=multi-user.target
