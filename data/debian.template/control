@@ -2,8 +2,8 @@ Source: guerillabackup
 Section: misc
 Priority: optional
 Maintainer: halfdog <me@halfdog.net>
-Build-Depends: debhelper (>= 13.0.0), debhelper-compat (=13), dh-python, docbook-xsl, docbook-xml, python3, xsltproc
-Standards-Version: 4.6.0.1
+Build-Depends: debhelper-compat (=13), dh-python, docbook-xsl, docbook-xml, python3, xsltproc
+Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://github.com/halfdog/guerillabackup
 Vcs-Git: https://github.com/halfdog/guerillabackup.git
